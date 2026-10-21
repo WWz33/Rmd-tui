@@ -22,19 +22,19 @@ a literal or `$EDITOR`.
 ## Install
 
 ```sh
-cargo build --release          # 2.3 MB binary, about 25 seconds cold
+cargo build --release
 ln -sf "$PWD/target/release/rmdt" ~/.local/bin/rmdt
 ```
 
 ## Use
 
 ```sh
-rmdt ~/my_package                # build that package's site, then read it here
-rmdt vignettes/intro.Rmd              # read one document
-rmdt --watch vignettes/intro.Rmd      # read it while you edit it
-rmdt ~/my_package --html         # only build the pages (add --open for a browser)
-rmdt vignettes/intro.Rmd --md         # filtered Markdown on stdout
-rmdt vignettes/intro.Rmd --md | mdt   # hand it to another terminal viewer
+rmdt ~/my_package
+rmdt vignettes/intro.Rmd
+rmdt --watch vignettes/intro.Rmd
+rmdt ~/my_package --html
+rmdt vignettes/intro.Rmd --md
+rmdt vignettes/intro.Rmd --md | mdt
 ```
 
 A bare `rmdt` walks up from the current directory to the nearest package (a
@@ -48,9 +48,9 @@ in the terminal:
 
 ```sh
 cd ~/my_package
-rmdt                      # build the site, then browse it here
-rmdt --html               # build it and stop; add --open for a browser
-rmdt --html -d /tmp/site  # build it somewhere else
+rmdt
+rmdt --html
+rmdt --html -d /tmp/site
 ```
 
 The site goes to `<package>/.rmdview/` and the source tree is left alone. It
@@ -94,6 +94,8 @@ run this in a terminal.
 | `--no-banner` | drop the "code not executed" strip from the page |
 | `--no-math` | leave MathJax out of the page |
 | `-o PATH`, `-d DIR` | where to write, for a file or for a directory |
+| `--html` | write pages instead of reading in the terminal |
+| `--md` | write the filtered Markdown to stdout, or to `-o` |
 | `--open` | open the written page in a browser. Writing a page does not open one by itself |
 | `--no-open` | state that nothing should be opened, which is the default |
 

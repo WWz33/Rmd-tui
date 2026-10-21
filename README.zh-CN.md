@@ -16,19 +16,19 @@
 ## 安装
 
 ```sh
-cargo build --release          # 2.3 MB 二进制，冷编译约 25 秒
+cargo build --release
 ln -sf "$PWD/target/release/rmdt" ~/.local/bin/rmdt
 ```
 
 ## 用法
 
 ```sh
-rmdt ~/my_package                # 建站，然后在终端里阅读
-rmdt vignettes/intro.Rmd              # 读单个文档
-rmdt --watch vignettes/intro.Rmd      # 边改边读
-rmdt ~/my_package --html         # 只生成页面（加 --open 才开浏览器）
-rmdt vignettes/intro.Rmd --md         # 过滤后的 Markdown 输出到 stdout
-rmdt vignettes/intro.Rmd --md | mdt   # 交给别的终端阅读器
+rmdt ~/my_package
+rmdt vignettes/intro.Rmd
+rmdt --watch vignettes/intro.Rmd
+rmdt ~/my_package --html
+rmdt vignettes/intro.Rmd --md
+rmdt vignettes/intro.Rmd --md | mdt
 ```
 
 不带参数的 `rmdt` 会从当前目录向上找到最近的包（有 `DESCRIPTION` 文件或 `vignettes/` 目录）。
@@ -40,9 +40,9 @@ rmdt vignettes/intro.Rmd --md | mdt   # 交给别的终端阅读器
 
 ```sh
 cd ~/my_package
-rmdt                      # 建站，然后在这里浏览
-rmdt --html               # 只建站就停；加 --open 才开浏览器
-rmdt --html -d /tmp/site  # 建到别处
+rmdt
+rmdt --html
+rmdt --html -d /tmp/site
 ```
 
 站点写到 `<包目录>/.rmdview/`，源码树不动。它包含：
@@ -81,6 +81,8 @@ run this in a terminal.
 | `--no-banner` | 去掉页面顶部那行「code not executed」 |
 | `--no-math` | 页面里不引入 MathJax |
 | `-o PATH`、`-d DIR` | 写到哪个文件或哪个目录 |
+| `--html` | 生成页面，而不是在终端里读 |
+| `--md` | 把过滤后的 Markdown 写到 stdout，或者写到 `-o` |
 | `--open` | 用浏览器打开写出的页面。只写页面不会自己打开 |
 | `--no-open` | 明确表示什么都不打开，这也是默认行为 |
 
