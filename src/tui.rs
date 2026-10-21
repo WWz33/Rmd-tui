@@ -18,7 +18,8 @@ use ratatui::Frame;
 
 use crate::render::{self, OutlineEntry, Row};
 use crate::rmd::{self, Document, Overrides};
-use crate::theme::{ThemeName, TuiTheme};
+use crate::theme::{CodeThemeChoice, ThemeName, TuiTheme};
+use tui_markdown::BuiltinCodeTheme;
 
 /// Where the outline lives.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default, clap::ValueEnum)]
@@ -36,14 +37,13 @@ pub enum OutlineMode {
 #[derive(Debug, Clone)]
 pub struct RunOptions {
     pub theme: ThemeName,
+    pub code_theme: CodeThemeChoice,
     pub overrides: Overrides,
     pub watch: bool,
     pub outline: OutlineMode,
 }
 
 const SIDEBAR_WIDTH: u16 = 28;
-const MATCH_BG: Color = Color::Rgb(58, 58, 0);
-const MATCH_CURRENT_BG: Color = Color::Rgb(122, 92, 0);
 
 struct Search {
     query: String,
@@ -70,6 +70,7 @@ struct App {
     content_width: usize,
     height: usize,
     theme: TuiTheme,
+    code_theme: BuiltinCodeTheme,
     options: RunOptions,
     popup: bool,
     popup_index: usize,
@@ -98,6 +99,7 @@ impl App {
             content_width: 0,
             height: 0,
             theme: TuiTheme::new(options.theme),
+            code_theme: options.code_theme.resolve(),
             options,
             popup: false,
             popup_index: 0,
@@ -156,7 +158,7 @@ impl App {
     /// Re-wrap at the current width, landing on `anchor_src` if given.
     fn rebuild(&mut self, width: usize, anchor_src: Option<usize>) {
         let width = width.max(24);
-        let (rows, outline) = render::build(&self.doc, self.theme, width);
+        let (rows, outline) = render::build(&self.doc, self.theme, self.code_theme, width);
         self.rows = rows;
         self.outline = outline;
         self.content_width = width;
@@ -562,10 +564,12 @@ fn visible_rows(app: &App, height: usize) -> Vec<Line<'static>> {
         let row_index = app.offset + index;
         let mut line = row.line.clone();
         if let Some(list) = &app.search {
+            // Reverse video and an underline rather than a fixed highlight
+            // colour, which would fight the terminal's own background.
             if Some(row_index) == list.current() {
-                line.style = line.style.bg(MATCH_CURRENT_BG);
+                line.style = line.style.add_modifier(Modifier::REVERSED);
             } else if list.matches.contains(&row_index) {
-                line.style = line.style.bg(MATCH_BG);
+                line.style = line.style.add_modifier(Modifier::UNDERLINED);
             }
         }
         lines.push(line);
@@ -952,6 +956,7 @@ mu paragraph
     fn options() -> RunOptions {
         RunOptions {
             theme: ThemeName::Rmarkdown,
+            code_theme: CodeThemeChoice::Dark,
             overrides: Overrides::default(),
             watch: false,
             outline: OutlineMode::Popup,
@@ -981,6 +986,24 @@ mu paragraph
 
     fn status(app: &App) -> String {
         line_text(&status_line(app))
+    }
+
+    #[test]
+    fn the_code_palette_follows_the_choice() {
+        use crate::theme::CodeThemeChoice;
+        assert_eq!(
+            CodeThemeChoice::Light.resolve(),
+            BuiltinCodeTheme::InspiredGitHub
+        );
+        assert_eq!(
+            CodeThemeChoice::Dark.resolve(),
+            BuiltinCodeTheme::Base16OceanDark
+        );
+        assert_eq!(CodeThemeChoice::default(), CodeThemeChoice::Dark);
+        assert_eq!(
+            CodeThemeChoice::SolarizedLight.resolve(),
+            BuiltinCodeTheme::SolarizedLight
+        );
     }
 
     #[test]

@@ -9,13 +9,13 @@
 //! Nothing here knows about R Markdown beyond the [`Block`] variants handed to
 //! it, so the row and source map machinery is portable.
 
-use ratatui_core::style::{Modifier, Style};
+use ratatui_core::style::{Color, Modifier, Style};
 use ratatui_core::text::{Line, Span};
-use tui_markdown::{from_str_with_options, Options, StyleSheet};
+use tui_markdown::{from_str_with_options, BuiltinCodeTheme, Options, StyleSheet};
 use unicode_width::UnicodeWidthChar;
 
 use crate::rmd::{Block, Document, INLINE_R_MARKER};
-use crate::theme::TuiTheme;
+use crate::theme::{CodeThemeChoice, TuiTheme};
 
 /// What a row is. Decides how it wraps and whether it gets a gutter.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -73,11 +73,17 @@ pub struct OutlineEntry {
 }
 
 /// Build the wrapped rows and the outline for a document.
-pub fn build(doc: &Document, theme: TuiTheme, width: usize) -> (Vec<Row>, Vec<OutlineEntry>) {
+pub fn build(
+    doc: &Document,
+    theme: TuiTheme,
+    code_theme: BuiltinCodeTheme,
+    width: usize,
+) -> (Vec<Row>, Vec<OutlineEntry>) {
     let width = width.max(24);
     let options = Options::new(theme)
         .table_width(width.min(u16::MAX as usize) as u16)
-        .table_row_dividers(true);
+        .table_row_dividers(true)
+        .code_theme(code_theme);
 
     let mut rows: Vec<Row> = Vec::new();
     let mut outline: Vec<OutlineEntry> = Vec::new();
@@ -403,7 +409,12 @@ mod tests {
             Path::new("/tmp/rmdt-render.Rmd"),
             &Overrides::default(),
         );
-        build(&document, TuiTheme::new(ThemeName::Rmarkdown), width)
+        build(
+            &document,
+            TuiTheme::new(ThemeName::Rmarkdown),
+            CodeThemeChoice::Dark.resolve(),
+            width,
+        )
     }
 
     #[test]
@@ -494,6 +505,41 @@ mod tests {
                 rows.iter().map(|row| row.text()).collect::<Vec<_>>()
             );
         }
+    }
+
+    /// Colours of the spans in the fenced code block.
+    fn code_colours(source: &str, choice: CodeThemeChoice) -> Vec<Color> {
+        let document = parse(
+            source,
+            Path::new("/tmp/rmdt-render.Rmd"),
+            &Overrides::default(),
+        );
+        let (rows, _) = build(
+            &document,
+            TuiTheme::new(ThemeName::Rmarkdown),
+            choice.resolve(),
+            60,
+        );
+        rows.iter()
+            .filter(|row| row.text().contains("dplyr"))
+            .flat_map(|row| row.line.spans.iter().map(|span| span.style.fg))
+            .flatten()
+            .collect()
+    }
+
+    #[test]
+    fn the_code_palette_matches_the_terminal_background() {
+        let source = "```{r demo}\nlibrary(dplyr)\n```\n";
+        // Base16 Ocean dark paints plain code text near-white.
+        assert!(
+            code_colours(source, CodeThemeChoice::Dark).contains(&Color::Rgb(0xc0, 0xc5, 0xce)),
+            "the dark palette should draw light code text"
+        );
+        // InspiredGitHub paints it near-black, for a light terminal.
+        assert!(
+            code_colours(source, CodeThemeChoice::Light).contains(&Color::Rgb(0x32, 0x32, 0x32)),
+            "the light palette should draw dark code text"
+        );
     }
 
     #[test]

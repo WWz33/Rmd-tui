@@ -90,6 +90,7 @@ run this in a terminal.
 | `--toc-depth N` | how deep the contents go |
 | `--number-sections` / `--no-number-sections` | force section numbering |
 | `--outline popup\|pinned\|off` | where the outline starts |
+| `--code-theme dark\|light\|...` | syntax highlighting palette for fenced code in the terminal. Every palette is painted for one background, so `light` is the one for a light terminal; the default is `dark`, and the seven built-in themes are accepted by name |
 | `--watch` | read the file again whenever it changes |
 | `--no-banner` | drop the "code not executed" strip from the page |
 | `--no-math` | leave MathJax out of the page |

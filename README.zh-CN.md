@@ -77,6 +77,7 @@ run this in a terminal.
 | `--toc-depth N` | 目录列到第几级标题 |
 | `--number-sections` / `--no-number-sections` | 强制打开或关闭章节编号 |
 | `--outline popup\|pinned\|off` | 大纲初始形态：弹窗、常驻侧栏、关闭 |
+| `--code-theme dark\|light\|...` | 终端里代码块的高亮配色。每套配色都是为某一种底色画的，浅色终端要用 `light`；默认是 `dark`，也可以直接写七个内置主题的名字 |
 | `--watch` | 文件一变就重新读取 |
 | `--no-banner` | 去掉页面顶部那行「code not executed」 |
 | `--no-math` | 页面里不引入 MathJax |

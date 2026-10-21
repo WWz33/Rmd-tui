@@ -5,7 +5,7 @@
 //! expressed in ratatui styles: headings, code, borders and links.
 
 use ratatui_core::style::{Color, Modifier, Style};
-use tui_markdown::StyleSheet;
+use tui_markdown::{BuiltinCodeTheme, StyleSheet};
 
 /// The three looks the tool ships with.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default, clap::ValueEnum)]
@@ -211,6 +211,45 @@ pub fn stylesheet(theme: ThemeName) -> String {
         .collect::<Vec<_>>()
         .join(" ");
     format!(":root {{{root}}}\n{CSS_BASE}{extra}")
+}
+
+/// The syntax-highlighting palette for fenced code in the terminal.
+///
+/// Every syntax theme is painted for one background or the other: a dark one
+/// draws plain code text near-white, a light one near-black. This picks the
+/// side, and the seven built-in themes are there by name for anyone who wants a
+/// particular one.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, clap::ValueEnum)]
+pub enum CodeThemeChoice {
+    /// For a terminal with a dark background.
+    #[default]
+    Dark,
+    /// For a terminal with a light background.
+    Light,
+    /// The remaining built-in themes, by name.
+    Eighties,
+    Mocha,
+    OceanDark,
+    OceanLight,
+    Github,
+    SolarizedDark,
+    SolarizedLight,
+}
+
+impl CodeThemeChoice {
+    pub fn resolve(self) -> BuiltinCodeTheme {
+        match self {
+            Self::Dark => BuiltinCodeTheme::Base16OceanDark,
+            Self::Light => BuiltinCodeTheme::InspiredGitHub,
+            Self::Eighties => BuiltinCodeTheme::Base16EightiesDark,
+            Self::Mocha => BuiltinCodeTheme::Base16MochaDark,
+            Self::OceanDark => BuiltinCodeTheme::Base16OceanDark,
+            Self::OceanLight => BuiltinCodeTheme::Base16OceanLight,
+            Self::Github => BuiltinCodeTheme::InspiredGitHub,
+            Self::SolarizedDark => BuiltinCodeTheme::SolarizedDark,
+            Self::SolarizedLight => BuiltinCodeTheme::SolarizedLight,
+        }
+    }
 }
 
 /// Terminal styling, applied through `tui-markdown`'s style sheet.

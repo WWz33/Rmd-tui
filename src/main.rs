@@ -17,7 +17,7 @@ use clap::Parser;
 
 use crate::html::HtmlOptions;
 use crate::rmd::Overrides;
-use crate::theme::ThemeName;
+use crate::theme::{CodeThemeChoice, ThemeName};
 use crate::tui::{OutlineMode, RunOptions};
 
 #[derive(Parser, Debug)]
@@ -54,6 +54,11 @@ struct Cli {
     /// Visual theme
     #[arg(long, value_enum, default_value_t = ThemeName::Rmarkdown)]
     theme: ThemeName,
+
+    /// Syntax highlighting palette for fenced code in the terminal: `dark` or
+    /// `light` to match the terminal background, or any built-in theme by name
+    #[arg(long, value_enum, default_value_t = CodeThemeChoice::Dark)]
+    code_theme: CodeThemeChoice,
 
     /// Force the table of contents on
     #[arg(long)]
@@ -415,6 +420,7 @@ fn pick(on: bool, off: bool) -> Option<bool> {
 fn run_options(cli: &Cli, overrides: Overrides) -> RunOptions {
     RunOptions {
         theme: cli.theme,
+        code_theme: cli.code_theme,
         overrides,
         watch: cli.watch,
         outline: cli.outline,
