@@ -1,9 +1,9 @@
 //! HTML backend.
 //!
-//! Emits the same shape the earlier Python tool produced: a standalone page with
-//! a stylesheet, an optional floating table of contents, chunk header bars, a
-//! note for every chunk that was not shown, and a placeholder where a figure
-//! would have been. MathJax is only pulled in when the document has math.
+//! Emits a standalone page with a stylesheet, an optional floating table of
+//! contents, chunk header bars, a note for every chunk that was not shown, and a
+//! placeholder where a figure would have been. MathJax is only pulled in when
+//! the page really has math on it.
 
 use pulldown_cmark::{html, Options, Parser};
 

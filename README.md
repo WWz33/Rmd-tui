@@ -29,10 +29,10 @@ ln -sf "$PWD/target/release/rmdt" ~/.local/bin/rmdt
 ## Use
 
 ```sh
-rmdt ~/r_package/bears                # build that package's site, then read it here
+rmdt ~/my_package                # build that package's site, then read it here
 rmdt vignettes/intro.Rmd              # read one document
 rmdt --watch vignettes/intro.Rmd      # read it while you edit it
-rmdt ~/r_package/bears --html         # only build the pages (add --open for a browser)
+rmdt ~/my_package --html         # only build the pages (add --open for a browser)
 rmdt vignettes/intro.Rmd --md         # filtered Markdown on stdout
 rmdt vignettes/intro.Rmd --md | mdt   # hand it to another terminal viewer
 ```
@@ -47,7 +47,7 @@ Pointing `rmdt` at a package builds a small documentation site and then reads it
 in the terminal:
 
 ```sh
-cd ~/r_package/bears
+cd ~/my_package
 rmdt                      # build the site, then browse it here
 rmdt --html               # build it and stop; add --open for a browser
 rmdt --html -d /tmp/site  # build it somewhere else
@@ -74,8 +74,8 @@ have one, it says so and names the pages it wrote, rather than failing with a
 terminal error:
 
 ```
-$ rmdt ~/r_package/bears | cat
-site: 3 page(s) -> /home/me/r_package/bears/.rmdview/index.html
+$ rmdt ~/my_package | cat
+site: 3 page(s) -> /home/me/my_package/.rmdview/index.html
 rmdt: the terminal view needs a terminal on stdin and stdout. The pages are
 already written: .../.rmdview/index.html. Use --html to write pages instead, or
 run this in a terminal.
@@ -148,7 +148,10 @@ a LaTeX front end this tool does not have. Asking for a package whose vignettes
 are all `.Rnw` says so instead of coming up empty:
 
 ```
-rmdt: no .Rmd files under PopGenome, but 3 Sweave .Rnw file(s) are there. ...
+rmdt: no .Rmd files under ~/my_package. It holds Sweave .Rnw files such as
+~/my_package/vignettes/new_methods.Rnw, which rmdt does not read: an .Rnw
+document is LaTeX with R chunks and needs a front end this tool does not have
+yet.
 ```
 
 Inline R is shown but never evaluated, so a computed value such as a date appears
@@ -179,40 +182,8 @@ simple.
 
 Rendering is done by [`tui-markdown`](https://github.com/joshka/tui-markdown)
 (`pulldown-cmark` plus `syntect`), with a `StyleSheet` implementation as the
-terminal theme. The HTML backend writes its own markup so it can put the section
-numbers, chunk headers, notes and figure captions where the earlier Python tool
-put them.
-
-## Tests
-
-```sh
-cargo test                    # 89 unit tests
-cargo clippy --all-targets    # clean
-```
-
-The unit tests cover the chunk option rules, the front matter, the markdown
-output, the HTML output, row wrapping and the source map, and the terminal
-screens through `ratatui`'s `TestBackend`. Malformed documents are in there too:
-unterminated fences and front matter, a child document that includes itself or
-forms a cycle, empty and seven hash headings, CRLF input, and a file with no
-valid UTF-8, which is reported rather than guessed at.
-
-Rendering was compared against the Python tool this replaces on four real
-vignettes and one fixture covering every feature: heading counts by level, chunk
-blocks, notes, section numbers, contents links, tables, figure captions, math and
-the `rinline` class all match exactly.
-
-## Differences from the Python tool
-
-- The default command reads the terminal. `--html` is the browser path, and it
-  writes the page without opening a browser unless you pass `--open`.
-- HTML bodies are not byte identical to the Python output: line breaks inside
-  paragraphs and list items follow the source, and table attributes are spaced
-  differently. The rendered result is the same.
-- The three stylesheets and the chunk header markup are carried over unchanged.
-
-The command line tests and the Python tool this replaces are kept outside the
-repository.
+terminal theme. The HTML backend writes its own markup so the section numbers,
+chunk headers, notes and figure captions land where they belong.
 
 ## License
 

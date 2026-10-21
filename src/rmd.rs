@@ -111,8 +111,6 @@ pub fn parse(text: &str, source: &Path, overrides: &Overrides) -> Document {
     finish(meta, blocks, source, overrides)
 }
 
-// ------------------------------------------------------------------ front matter
-
 /// Split off a leading YAML block.
 ///
 /// rmarkdown nests the options this tool cares about under `output:`:
@@ -243,8 +241,6 @@ pub fn as_flag(value: &str) -> bool {
     )
 }
 
-// ------------------------------------------------------------------ chunk options
-
 /// ```` ```{r label, echo=FALSE} ```` into engine, label and options.
 ///
 /// The header is accepted with or without commas, so `{r child="x.Rmd"}` and
@@ -374,8 +370,6 @@ fn option_value<'a>(options: &'a [(String, String)], key: &str) -> Option<&'a st
         .find(|(name, _)| name == key)
         .map(|(_, value)| value.as_str())
 }
-
-// ------------------------------------------------------------------ block parsing
 
 /// `offset` is the number of lines the front matter took, so block source lines
 /// match the file the reader is looking at.
@@ -586,8 +580,6 @@ fn language_for(engine: &str) -> String {
     }
 }
 
-// ------------------------------------------------------------------ prose helpers
-
 /// Remove HTML comments. They are scaffolding, not content.
 fn strip_comments(text: &str) -> String {
     let mut out = String::with_capacity(text.len());
@@ -694,8 +686,6 @@ pub fn slug(text: &str) -> String {
         slug
     }
 }
-
-// ------------------------------------------------------------------ finishing
 
 fn finish(meta: Meta, mut blocks: Vec<Block>, source: &Path, overrides: &Overrides) -> Document {
     let layout = Layout {
@@ -864,8 +854,6 @@ mod tests {
         }
     }
 
-    // ---------------------------------------------------------- chunk options
-
     #[test]
     fn echo_false_hides_the_code() {
         let out = html("```{r private, echo=FALSE}\nsecret_call()\n```\n");
@@ -959,8 +947,6 @@ mod tests {
         assert!(out.contains("# not a heading"));
     }
 
-    // ---------------------------------------------------------- no execution
-
     /// Everything above `#[cfg(test)]`, so a scan does not find its own literals.
     fn production_source(source: &str) -> &str {
         source.split("\n#[cfg(test)]").next().unwrap_or(source)
@@ -1019,8 +1005,6 @@ mod tests {
         assert_eq!(page.matches(r#"class="rinline""#).count(), 1);
         assert!(!md(text).contains(INLINE_R_MARKER));
     }
-
-    // ---------------------------------------------------------- prose blocks
 
     #[test]
     fn front_matter_becomes_the_document_header() {
@@ -1159,8 +1143,6 @@ mod tests {
         assert!(out.contains(r#"<h2 id="head">Head</h2>"#));
     }
 
-    // ---------------------------------------------------------- structure
-
     #[test]
     fn front_matter_turns_on_the_toc_and_numbering() {
         let out =
@@ -1279,8 +1261,6 @@ mod tests {
         assert_eq!(slug("!!!"), "section");
     }
 
-    // ---------------------------------------------------------- markdown output
-
     #[test]
     fn markdown_keeps_chunks_and_filters_hidden_ones() {
         let out = md("```{r keep}\nx <- 1\n```\n\n```{r gone, echo=FALSE}\ny <- 2\n```\n");
@@ -1310,8 +1290,6 @@ mod tests {
         assert!(out.starts_with("# Report\nAuthor: me\n"));
     }
 
-    // ---------------------------------------------------------- option parsing
-
     #[test]
     fn chunk_headers_parse_with_and_without_commas() {
         let (engine, label, options) = parse_chunk_info("{r setup, echo=FALSE, fig.width=6}");
@@ -1335,8 +1313,6 @@ mod tests {
         let (_, _, options) = parse_chunk_info("{r shown, fig.cap=\"A caption, with a comma\"}");
         assert_eq!(options[0].1, "A caption, with a comma");
     }
-
-    // ---------------------------------------------------------- robustness
 
     #[test]
     fn source_lines_are_numbered_in_the_file_not_the_body() {

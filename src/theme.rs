@@ -19,8 +19,6 @@ pub enum ThemeName {
     Plain,
 }
 
-// ------------------------------------------------------------------ html
-
 const CSS_BASE: &str = r#"
 * { box-sizing:border-box; }
 html { scroll-behavior:smooth; }
@@ -214,8 +212,6 @@ pub fn stylesheet(theme: ThemeName) -> String {
         .join(" ");
     format!(":root {{{root}}}\n{CSS_BASE}{extra}")
 }
-
-// ------------------------------------------------------------------ terminal
 
 /// Terminal styling, applied through `tui-markdown`'s style sheet.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]

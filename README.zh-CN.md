@@ -23,10 +23,10 @@ ln -sf "$PWD/target/release/rmdt" ~/.local/bin/rmdt
 ## 用法
 
 ```sh
-rmdt ~/r_package/bears                # 建站，然后在终端里阅读
+rmdt ~/my_package                # 建站，然后在终端里阅读
 rmdt vignettes/intro.Rmd              # 读单个文档
 rmdt --watch vignettes/intro.Rmd      # 边改边读
-rmdt ~/r_package/bears --html         # 只生成页面（加 --open 才开浏览器）
+rmdt ~/my_package --html         # 只生成页面（加 --open 才开浏览器）
 rmdt vignettes/intro.Rmd --md         # 过滤后的 Markdown 输出到 stdout
 rmdt vignettes/intro.Rmd --md | mdt   # 交给别的终端阅读器
 ```
@@ -39,7 +39,7 @@ rmdt vignettes/intro.Rmd --md | mdt   # 交给别的终端阅读器
 把 `rmdt` 指向一个包，它会建一个小型文档站点，然后在终端里读它：
 
 ```sh
-cd ~/r_package/bears
+cd ~/my_package
 rmdt                      # 建站，然后在这里浏览
 rmdt --html               # 只建站就停；加 --open 才开浏览器
 rmdt --html -d /tmp/site  # 建到别处
@@ -61,8 +61,8 @@ rmdt --html -d /tmp/site  # 建到别处
 抛一个终端错误：
 
 ```
-$ rmdt ~/r_package/bears | cat
-site: 3 page(s) -> /home/me/r_package/bears/.rmdview/index.html
+$ rmdt ~/my_package | cat
+site: 3 page(s) -> /home/me/my_package/.rmdview/index.html
 rmdt: the terminal view needs a terminal on stdin and stdout. The pages are
 already written: .../.rmdview/index.html. Use --html to write pages instead, or
 run this in a terminal.
@@ -131,8 +131,10 @@ Sweave 的 `.Rnw` vignette。那种文档是 LaTeX 加 R chunk，不是 Markdown
 前端。指到一个 vignette 全是 `.Rnw` 的包时，它会明说而不是空手而归：
 
 ```
-rmdt: no .Rmd files under PopGenome. It holds Sweave .Rnw files such as
-.../vignettes/Integration_of_new_Methods.Rnw, which rmdt does not read: ...
+rmdt: no .Rmd files under ~/my_package. It holds Sweave .Rnw files such as
+~/my_package/vignettes/new_methods.Rnw, which rmdt does not read: an .Rnw
+document is LaTeX with R chunks and needs a front end this tool does not have
+yet.
 ```
 
 行内 R 只显示不求值，所以像日期这样的算出来的值，显示出来的是产出它的那个表达式。
@@ -156,29 +158,7 @@ rmdt: no .Rmd files under PopGenome. It holds Sweave .Rnw files such as
 
 渲染由 [`tui-markdown`](https://github.com/joshka/tui-markdown)（`pulldown-cmark` 加 `syntect`）
 完成，终端主题是它的一套 `StyleSheet` 实现。HTML 后端自己写标记，这样才能把章节号、chunk 头、
-未运行提示、图注放在跟早先那个 Python 工具相同的位置。
-
-## 测试
-
-```sh
-cargo test                    # 89 条单元测试
-cargo clippy --all-targets    # 无告警
-```
-
-单元测试覆盖 chunk 选项规则、front matter、Markdown 输出、HTML 输出、折行与源码映射，以及通过
-`ratatui` 的 `TestBackend` 断言的终端画面。畸形文档也在其中：未闭合的围栏和 front matter、
-自己包含自己或互相成环的 child 文档、空标题和七个井号的标题、CRLF 输入，以及不含合法 UTF-8 的
-文件（这类会明确报错，而不是猜）。
-
-渲染结果跟它取代的那个 Python 工具做过对比，用的是四篇真实 vignette 和一个覆盖全部特性的夹具：
-按级别统计的标题数、chunk 块、提示、章节号、目录链接、表格、图注、公式、`rinline` 类全部一致。
-
-## 与 Python 版的差别
-
-- 默认命令是在终端里读。`--html` 是浏览器那条路，它只写页面，除非你传 `--open`。
-- HTML 正文与 Python 版不是逐字节相同：段落和列表项内部的换行跟随源码，表格属性的空格也不同。
-  渲染结果一致。
-- 三套样式表和 chunk 头部的标记原样沿用。
+未运行提示、图注放在该在的位置。
 
 ## 许可证
 
