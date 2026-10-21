@@ -11,7 +11,7 @@
 
 use ratatui_core::style::{Modifier, Style};
 use ratatui_core::text::{Line, Span};
-use tui_markdown::{from_str_with_options, BuiltinCodeTheme, Options, StyleSheet};
+use tui_markdown::{from_str_with_options, CodeTheme, Options, StyleSheet};
 use unicode_width::UnicodeWidthChar;
 
 use crate::rmd::{Block, Document, INLINE_R_MARKER};
@@ -64,6 +64,15 @@ impl Row {
     }
 }
 
+/// The rows of a document, and where each block landed in them.
+#[derive(Debug, Clone, Default)]
+pub struct Layout {
+    pub rows: Vec<Row>,
+    pub outline: Vec<OutlineEntry>,
+    /// First row of each block, in the order the blocks were given.
+    pub block_rows: Vec<usize>,
+}
+
 /// A heading, with the row it starts on.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct OutlineEntry {
@@ -73,12 +82,7 @@ pub struct OutlineEntry {
 }
 
 /// Build the wrapped rows and the outline for a document.
-pub fn build(
-    doc: &Document,
-    theme: TuiTheme,
-    code_theme: BuiltinCodeTheme,
-    width: usize,
-) -> (Vec<Row>, Vec<OutlineEntry>) {
+pub fn build(doc: &Document, theme: TuiTheme, code_theme: CodeTheme, width: usize) -> Layout {
     let width = width.max(24);
     let options = Options::new(theme)
         .table_width(width.min(u16::MAX as usize) as u16)
@@ -87,8 +91,10 @@ pub fn build(
 
     let mut rows: Vec<Row> = Vec::new();
     let mut outline: Vec<OutlineEntry> = Vec::new();
+    let mut block_rows: Vec<usize> = Vec::with_capacity(doc.blocks.len());
 
     for block in &doc.blocks {
+        block_rows.push(rows.len());
         match block {
             Block::Heading {
                 level,
@@ -207,7 +213,11 @@ pub fn build(
         }
     }
 
-    (rows, outline)
+    Layout {
+        rows,
+        outline,
+        block_rows,
+    }
 }
 
 fn blank(src: usize) -> Row {
@@ -400,7 +410,7 @@ fn cells_to_spans(cells: &[(char, Style)]) -> Vec<Span<'static>> {
 mod tests {
     use super::*;
     use crate::rmd::{parse, Overrides};
-    use crate::theme::{CodeThemeChoice, ThemeName};
+    use crate::theme::TuiThemeChoice;
     use ratatui_core::style::Color;
     use std::path::Path;
 
@@ -410,12 +420,13 @@ mod tests {
             Path::new("/tmp/rmdt-render.Rmd"),
             &Overrides::default(),
         );
-        build(
+        let layout = build(
             &document,
-            TuiTheme::new(ThemeName::Rmarkdown),
-            CodeThemeChoice::Dark.resolve(),
+            TuiTheme::new(TuiThemeChoice::GlowDark),
+            TuiThemeChoice::GlowDark.code_theme(),
             width,
-        )
+        );
+        (layout.rows, layout.outline)
     }
 
     #[test]
@@ -509,19 +520,16 @@ mod tests {
     }
 
     /// Colours of the spans in the fenced code block.
-    fn code_colours(source: &str, choice: CodeThemeChoice) -> Vec<Color> {
+    fn code_colours(source: &str, choice: TuiThemeChoice) -> Vec<Color> {
         let document = parse(
             source,
             Path::new("/tmp/rmdt-render.Rmd"),
             &Overrides::default(),
         );
-        let (rows, _) = build(
-            &document,
-            TuiTheme::new(ThemeName::Rmarkdown),
-            choice.resolve(),
-            60,
-        );
-        rows.iter()
+        let layout = build(&document, TuiTheme::new(choice), choice.code_theme(), 60);
+        layout
+            .rows
+            .iter()
             .filter(|row| row.text().contains("dplyr"))
             .flat_map(|row| row.line.spans.iter().map(|span| span.style.fg))
             .flatten()
@@ -530,16 +538,19 @@ mod tests {
 
     #[test]
     fn the_code_palette_matches_the_terminal_background() {
-        let source = "```{r demo}\nlibrary(dplyr)\n```\n";
+        let source = "```{r demo}\nlibrary(dplyr)\n```\n\n```{python}\nprint(math.pi)\n```\n";
         // Base16 Ocean dark paints plain code text near-white.
+        // chroma's function greens are the giveaway: neither built-in syntect
+        // theme uses them.
+        let dark = code_colours(source, TuiThemeChoice::GlowDark);
         assert!(
-            code_colours(source, CodeThemeChoice::Dark).contains(&Color::Rgb(0xc0, 0xc5, 0xce)),
-            "the dark palette should draw light code text"
+            dark.contains(&Color::Rgb(0x00, 0xD7, 0x87)),
+            "glow's dark chroma palette should colour the tokens: {dark:?}"
         );
-        // InspiredGitHub paints it near-black, for a light terminal.
+        let light = code_colours(source, TuiThemeChoice::GlowLight);
         assert!(
-            code_colours(source, CodeThemeChoice::Light).contains(&Color::Rgb(0x32, 0x32, 0x32)),
-            "the light palette should draw dark code text"
+            light.contains(&Color::Rgb(0x01, 0x9F, 0x57)),
+            "glow's light chroma palette should colour the tokens: {light:?}"
         );
     }
 

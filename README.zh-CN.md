@@ -72,12 +72,12 @@ run this in a terminal.
 
 | 选项 | 作用 |
 | --- | --- |
-| `--theme rmarkdown\|github\|plain` | 外观。浏览器里 `rmarkdown` 按 Bootstrap 3 的度量，也就是 `rmarkdown::render` 产出的样子；终端里 `plain` 是单色，另外两个共用一套配色，取自你终端自身的颜色，所以浅色背景和深色背景都能读 |
+| `--theme rmarkdown\|github\|plain` | 写出的页面的外观 |
+| `--tui-theme glow-dark\|glow-light\|minimal` | 终端里的外观：[glow](https://github.com/charmbracelet/glow) 的配色，分深色底和浅色底两套，`minimal` 则用终端自己的颜色 |
 | `--toc` / `--no-toc` | 强制打开或关闭目录 |
 | `--toc-depth N` | 目录列到第几级标题 |
 | `--number-sections` / `--no-number-sections` | 强制打开或关闭章节编号 |
-| `--outline popup\|pinned\|off` | 大纲初始形态：弹窗、常驻侧栏、关闭 |
-| `--code-theme dark\|light\|...` | 终端里代码块的高亮配色。每套配色都是为某一种底色画的，浅色终端要用 `light`；默认是 `dark`，也可以直接写七个内置主题的名字 |
+| `--outline pinned\|popup\|off` | 索引栏初始形态 |
 | `--watch` | 文件一变就重新读取 |
 | `--no-banner` | 去掉页面顶部那行「code not executed」 |
 | `--no-math` | 页面里不引入 MathJax |
@@ -94,7 +94,10 @@ front matter 会先被读取，所以文档只要在 `output:` 下写了 `toc: t
 
 | 按键 | 动作 |
 | --- | --- |
-| `j` `k`、上下方向键 | 一行 |
+| `j` `k` | 一行 |
+| `←` `→` | 在索引栏和正文之间切换 |
+| `↑` `↓` | 在获得方向键的那个窗格里移动 |
+| `Enter` | 在索引栏里：打开该文档，或进入该章节 |
 | `d` `u`、空格、翻页键 | 一页 |
 | `h` `l` | 半页 |
 | `g` `G` | 到顶、到底 |
@@ -107,6 +110,16 @@ front matter 会先被读取，所以文档只要在 `output:` 下写了 `toc: t
 | `b` | 回到文件列表 |
 | `?` | 按键说明 |
 | `q`、`Ctrl-C` | 退出 |
+
+### 索引栏
+
+左边那一栏是导航的地方。先列出包里其它文档，再列出当前文档的标题（按文档自己的编号）。`←` 把方向键交给索引栏，
+`↑` `↓` 选择条目，`Enter` 打开那个文档，或把正文跳到那一节并把方向键交回正文。`t` 把常驻栏换成 `o` 弹窗，
+`--outline off` 完全不显示；终端窄于 80 列时常驻栏自动隐藏，弹窗仍可用。
+
+配色取自 glow：markdown 部分来自 glamour 的样式文件，代码部分来自那些文件里带的 chroma 色表。
+`glow-dark` 与 `glow-light` 的区别只是为哪种底色而画，`minimal` 用终端自身的前景色，靠字重区分标题，
+适合 glow 的固定颜色不合口味的环境。
 
 弹层会先吃掉关闭它的那个按键，所以在大纲弹窗或按键说明里退出要按 `Esc` 再按 `q`。
 

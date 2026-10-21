@@ -4,8 +4,10 @@
 //! output stays where it was. The terminal themes are the same three ideas
 //! expressed in ratatui styles: headings, code, borders and links.
 
+use std::sync::LazyLock;
+
 use ratatui_core::style::{Color, Modifier, Style};
-use tui_markdown::{BuiltinCodeTheme, StyleSheet};
+use tui_markdown::{BuiltinCodeTheme, CodeTheme, StyleSheet};
 
 /// The three looks the tool ships with.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default, clap::ValueEnum)]
@@ -213,108 +215,234 @@ pub fn stylesheet(theme: ThemeName) -> String {
     format!(":root {{{root}}}\n{CSS_BASE}{extra}")
 }
 
-/// The syntax-highlighting palette for fenced code in the terminal.
+/// The terminal look.
 ///
-/// Every syntax theme is painted for one background or the other: a dark one
-/// draws plain code text near-white, a light one near-black. This picks the
-/// side, and the seven built-in themes are there by name for anyone who wants a
-/// particular one.
+/// `glow` is the palette of [glow](https://github.com/charmbracelet/glow): its
+/// markdown colours come from glamour's style files, and its code colours from
+/// the chroma tables those files carry, embedded here as TextMate themes. Both
+/// are painted for one background, so there is a dark one and a light one.
+/// `minimal` is the escape hatch: the terminal's own colours, weight for
+/// headings, no fixed colours at all.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default, clap::ValueEnum)]
-pub enum CodeThemeChoice {
-    /// For a terminal with a dark background.
+pub enum TuiThemeChoice {
+    /// glow's palette, for a terminal with a dark background.
     #[default]
-    Dark,
-    /// For a terminal with a light background.
-    Light,
-    /// The remaining built-in themes, by name.
-    Eighties,
-    Mocha,
-    OceanDark,
-    OceanLight,
-    Github,
-    SolarizedDark,
-    SolarizedLight,
+    GlowDark,
+    /// glow's palette, for a terminal with a light background.
+    GlowLight,
+    /// No fixed colours: the terminal's own foreground, weight and dim.
+    Minimal,
 }
 
-impl CodeThemeChoice {
-    pub fn resolve(self) -> BuiltinCodeTheme {
+impl TuiThemeChoice {
+    /// The syntax-highlighting theme, from glow's chroma tables.
+    pub fn code_theme(self) -> CodeTheme {
         match self {
-            Self::Dark => BuiltinCodeTheme::Base16OceanDark,
-            Self::Light => BuiltinCodeTheme::InspiredGitHub,
-            Self::Eighties => BuiltinCodeTheme::Base16EightiesDark,
-            Self::Mocha => BuiltinCodeTheme::Base16MochaDark,
-            Self::OceanDark => BuiltinCodeTheme::Base16OceanDark,
-            Self::OceanLight => BuiltinCodeTheme::Base16OceanLight,
-            Self::Github => BuiltinCodeTheme::InspiredGitHub,
-            Self::SolarizedDark => BuiltinCodeTheme::SolarizedDark,
-            Self::SolarizedLight => BuiltinCodeTheme::SolarizedLight,
+            Self::GlowDark => GLOW_DARK.clone(),
+            Self::GlowLight => GLOW_LIGHT.clone(),
+            Self::Minimal => BuiltinCodeTheme::Base16OceanDark.into(),
         }
     }
 }
+
+static GLOW_DARK: LazyLock<CodeTheme> = LazyLock::new(|| {
+    CodeTheme::from_textmate(include_str!("themes/glow-dark.tmTheme"))
+        .unwrap_or_else(|_| BuiltinCodeTheme::Base16OceanDark.into())
+});
+
+static GLOW_LIGHT: LazyLock<CodeTheme> = LazyLock::new(|| {
+    CodeTheme::from_textmate(include_str!("themes/glow-light.tmTheme"))
+        .unwrap_or_else(|_| BuiltinCodeTheme::InspiredGitHub.into())
+});
 
 /// Terminal styling, applied through `tui-markdown`'s style sheet.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub struct TuiTheme {
-    pub name: ThemeName,
+    pub name: TuiThemeChoice,
 }
 
+/// glamour's markdown palette, in the 256 colour numbers its style files use.
+struct Glow {
+    document: u8,
+    heading: u8,
+    heading_small: u8,
+    h1_foreground: u8,
+    h1_background: u8,
+    link_text: u8,
+    inline_code: u8,
+    inline_code_background: u8,
+    image_text: u8,
+    quote: u8,
+    border: u8,
+    /// glow's own interface colours, from its bubbles styles.
+    fuchsia: Color,
+    bright: Color,
+    dim_text: Color,
+    mid: Color,
+    accent_green: Color,
+    status_background: Color,
+}
+
+const GLOW_DARK_PALETTE: Glow = Glow {
+    document: 252,
+    heading: 39,
+    heading_small: 35,
+    h1_foreground: 228,
+    h1_background: 63,
+    link_text: 35,
+    inline_code: 203,
+    inline_code_background: 236,
+    image_text: 243,
+    quote: 244,
+    border: 240,
+    fuchsia: Color::Rgb(0xEE, 0x6F, 0xF8),
+    bright: Color::Rgb(0x97, 0x97, 0x97),
+    dim_text: Color::Rgb(0x77, 0x77, 0x77),
+    mid: Color::Rgb(0x4A, 0x4A, 0x4A),
+    accent_green: Color::Rgb(0xEC, 0xFD, 0x65),
+    status_background: Color::Rgb(0x24, 0x24, 0x24),
+};
+
+const GLOW_LIGHT_PALETTE: Glow = Glow {
+    document: 234,
+    heading: 27,
+    heading_small: 29,
+    h1_foreground: 228,
+    h1_background: 63,
+    link_text: 29,
+    inline_code: 203,
+    inline_code_background: 254,
+    image_text: 243,
+    quote: 242,
+    border: 249,
+    fuchsia: Color::Rgb(0xEE, 0x6F, 0xF8),
+    bright: Color::Rgb(0x33, 0x33, 0x33),
+    dim_text: Color::Rgb(0x90, 0x90, 0x90),
+    mid: Color::Rgb(0xB2, 0xB2, 0xB2),
+    accent_green: Color::Rgb(0x04, 0xB5, 0x75),
+    status_background: Color::Rgb(0xE6, 0xE6, 0xE6),
+};
+
 impl TuiTheme {
-    pub fn new(name: ThemeName) -> Self {
+    pub fn new(name: TuiThemeChoice) -> Self {
         Self { name }
     }
 
-    /// Accent for links, list markers and outline emphasis.
-    ///
-    /// A named colour, not a fixed one: the terminal's own palette decides the
-    /// exact shade, so the result stays readable on a light background and on a
-    /// dark one. `plain` has no accent at all.
-    fn accent(&self) -> Color {
+    fn glow(&self) -> Option<&'static Glow> {
         match self.name {
-            ThemeName::Plain => Color::Reset,
-            _ => Color::Blue,
+            TuiThemeChoice::GlowDark => Some(&GLOW_DARK_PALETTE),
+            TuiThemeChoice::GlowLight => Some(&GLOW_LIGHT_PALETTE),
+            TuiThemeChoice::Minimal => None,
         }
     }
 
-    /// For notes, captions, gutters and borders. Mid grey reads on both
-    /// backgrounds, where a fixed light or dark grey would not.
-    fn muted(&self) -> Color {
-        match self.name {
-            ThemeName::Plain => Color::Reset,
-            _ => Color::DarkGray,
-        }
+    /// The syntax-highlighting theme that goes with this look.
+    pub fn code_theme(&self) -> CodeTheme {
+        self.name.code_theme()
     }
 
-    /// Everything starts from the terminal's own foreground. A fixed text
-    /// colour would be unreadable on one of the two backgrounds.
     fn base(&self) -> Style {
-        Style::new().fg(Color::Reset)
+        match self.glow() {
+            Some(g) => Style::new().fg(Color::Indexed(g.document)),
+            None => Style::new().fg(Color::Reset),
+        }
     }
 
-    /// Style for app chrome: chunk headers, notes, captions, status bar.
+    /// Accent for links, list markers and outline emphasis.
+    pub fn accent(&self) -> Color {
+        match self.glow() {
+            Some(g) => Color::Indexed(g.link_text),
+            None => Color::Reset,
+        }
+    }
+
+    /// For notes, captions, gutters and borders.
     pub fn chrome(&self) -> Style {
-        self.base().fg(self.muted()).add_modifier(Modifier::DIM)
+        match self.glow() {
+            Some(g) => Style::new().fg(Color::Indexed(g.quote)),
+            None => self.base().add_modifier(Modifier::DIM),
+        }
     }
 
     /// Style for raw HTML passed through by a `{=html}` chunk.
     pub fn html_style(&self) -> Style {
-        self.base().fg(self.muted()).add_modifier(Modifier::DIM)
+        self.chrome().add_modifier(Modifier::DIM)
     }
 
     /// Accent colour, for the status bar and outlines.
     pub fn accent_color(&self) -> Color {
         self.accent()
     }
+
+    /// The column heading and the selected row in the index.
+    pub fn index_heading(&self) -> Style {
+        match self.glow() {
+            Some(g) => Style::new().fg(g.fuchsia).add_modifier(Modifier::BOLD),
+            None => self.base().add_modifier(Modifier::BOLD),
+        }
+    }
+
+    pub fn index_selected(&self) -> Style {
+        match self.glow() {
+            Some(g) => Style::new().fg(g.accent_green).add_modifier(Modifier::BOLD),
+            None => self.base().add_modifier(Modifier::REVERSED),
+        }
+    }
+
+    pub fn index_idle(&self) -> Style {
+        match self.glow() {
+            Some(g) => Style::new().fg(g.dim_text),
+            None => self.chrome(),
+        }
+    }
+
+    pub fn index_current(&self) -> Style {
+        match self.glow() {
+            Some(g) => Style::new().fg(g.bright),
+            None => self.base().add_modifier(Modifier::BOLD),
+        }
+    }
+
+    /// The vertical rule between the index and the document.
+    pub fn divider(&self) -> Style {
+        match self.glow() {
+            Some(g) => Style::new().fg(g.mid),
+            None => self.chrome(),
+        }
+    }
+
+    pub fn status_bar(&self) -> Style {
+        match self.glow() {
+            Some(g) => Style::new()
+                .fg(Color::Indexed(g.image_text))
+                .bg(g.status_background),
+            None => Style::new(),
+        }
+    }
 }
 
 impl StyleSheet for TuiTheme {
-    /// Hierarchy comes from weight and underline, not from colour: a heading
-    /// colour that looks right on white is unreadable on black.
     fn heading(&self, level: u8) -> Style {
-        let style = self.base().add_modifier(Modifier::BOLD);
-        if level == 1 {
-            style.add_modifier(Modifier::UNDERLINED)
-        } else {
-            style
+        match self.glow() {
+            // glow's first heading is a yellow label on a purple bar.
+            Some(g) if level <= 1 => Style::new()
+                .fg(Color::Indexed(g.h1_foreground))
+                .bg(Color::Indexed(g.h1_background))
+                .add_modifier(Modifier::BOLD),
+            Some(g) if level >= 6 => Style::new()
+                .fg(Color::Indexed(g.heading_small))
+                .add_modifier(Modifier::BOLD),
+            Some(g) => Style::new()
+                .fg(Color::Indexed(g.heading))
+                .add_modifier(Modifier::BOLD),
+            None => {
+                let style = self.base().add_modifier(Modifier::BOLD);
+                if level == 1 {
+                    style.add_modifier(Modifier::UNDERLINED)
+                } else {
+                    style
+                }
+            }
         }
     }
 
@@ -328,20 +456,30 @@ impl StyleSheet for TuiTheme {
         ""
     }
 
-    /// Code keeps the default foreground. Blocks are marked by their gutter and
-    /// header line; a code colour that survives both backgrounds does not exist.
+    /// Inline code: glow paints it pink on a darker chip.
     fn code(&self) -> Style {
-        self.base()
+        match self.glow() {
+            Some(g) => Style::new()
+                .fg(Color::Indexed(g.inline_code))
+                .bg(Color::Indexed(g.inline_code_background)),
+            None => self.base(),
+        }
     }
 
     fn link(&self) -> Style {
-        self.base()
-            .fg(self.accent())
-            .add_modifier(Modifier::UNDERLINED)
+        match self.glow() {
+            Some(g) => Style::new()
+                .fg(Color::Indexed(g.link_text))
+                .add_modifier(Modifier::BOLD)
+                .add_modifier(Modifier::UNDERLINED),
+            None => Style::new()
+                .fg(self.accent())
+                .add_modifier(Modifier::UNDERLINED),
+        }
     }
 
     fn blockquote(&self) -> Style {
-        self.base().fg(self.muted()).add_modifier(Modifier::ITALIC)
+        self.chrome().add_modifier(Modifier::ITALIC)
     }
 
     fn list_marker(&self) -> Style {
@@ -349,7 +487,10 @@ impl StyleSheet for TuiTheme {
     }
 
     fn table_border(&self) -> Style {
-        self.base().fg(self.muted())
+        match self.glow() {
+            Some(g) => Style::new().fg(Color::Indexed(g.border)),
+            None => self.chrome(),
+        }
     }
 
     fn table_header(&self) -> Style {
@@ -361,18 +502,21 @@ impl StyleSheet for TuiTheme {
     }
 
     fn math_inline(&self) -> Style {
-        self.base().fg(self.muted()).add_modifier(Modifier::ITALIC)
+        self.chrome().add_modifier(Modifier::ITALIC)
     }
 
     fn math_display(&self) -> Style {
-        self.base().fg(self.muted()).add_modifier(Modifier::ITALIC)
+        self.chrome().add_modifier(Modifier::ITALIC)
     }
 
     fn html(&self) -> Style {
-        self.base().fg(self.muted()).add_modifier(Modifier::DIM)
+        self.chrome().add_modifier(Modifier::DIM)
     }
 
     fn image_alt(&self) -> Style {
-        self.base().fg(self.muted())
+        match self.glow() {
+            Some(g) => Style::new().fg(Color::Indexed(g.image_text)),
+            None => self.chrome(),
+        }
     }
 }

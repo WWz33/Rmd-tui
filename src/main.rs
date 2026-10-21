@@ -17,7 +17,7 @@ use clap::Parser;
 
 use crate::html::HtmlOptions;
 use crate::rmd::Overrides;
-use crate::theme::{CodeThemeChoice, ThemeName};
+use crate::theme::{ThemeName, TuiThemeChoice};
 use crate::tui::{OutlineMode, RunOptions};
 
 #[derive(Parser, Debug)]
@@ -51,14 +51,13 @@ struct Cli {
     #[arg(long, short = 'd', value_name = "DIR")]
     outdir: Option<PathBuf>,
 
-    /// Visual theme
+    /// Theme for the written pages, in a browser
     #[arg(long, value_enum, default_value_t = ThemeName::Rmarkdown)]
     theme: ThemeName,
 
-    /// Syntax highlighting palette for fenced code in the terminal: `dark` or
-    /// `light` to match the terminal background, or any built-in theme by name
-    #[arg(long, value_enum, default_value_t = CodeThemeChoice::Dark)]
-    code_theme: CodeThemeChoice,
+    /// Theme for the terminal: glow's palette, dark or light, or minimal
+    #[arg(long, value_enum, default_value_t = TuiThemeChoice::GlowDark)]
+    tui_theme: TuiThemeChoice,
 
     /// Force the table of contents on
     #[arg(long)]
@@ -92,8 +91,8 @@ struct Cli {
     #[arg(long)]
     watch: bool,
 
-    /// Where the outline starts: popup, pinned, or off
-    #[arg(long, value_enum, default_value_t = OutlineMode::Popup)]
+    /// Where the index column starts: pinned, popup, or off
+    #[arg(long, value_enum, default_value_t = OutlineMode::Pinned)]
     outline: OutlineMode,
 
     /// Open the written page in a browser
@@ -201,8 +200,17 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
             }
             return Ok(());
         }
-        // Reading a package in the terminal browses the same set of documents.
-        return start_terminal(files, run_options(&cli, overrides), Some(&index));
+        // Reading a package in the terminal browses the same set of documents,
+        // listed in the index column.
+        let documents: Vec<(String, PathBuf)> = plan
+            .iter()
+            .map(|page| (page.label.clone(), page.document.source.clone()))
+            .collect();
+        return start_terminal(
+            files,
+            run_options(&cli, overrides, &documents),
+            Some(&index),
+        );
     }
 
     let files: Vec<PathBuf> = sources
@@ -268,7 +276,7 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
         return Ok(());
     }
 
-    start_terminal(files, run_options(&cli, overrides), None)
+    start_terminal(files, run_options(&cli, overrides, &[]), None)
 }
 
 /// One page of the site built for a package directory.
@@ -417,10 +425,10 @@ fn pick(on: bool, off: bool) -> Option<bool> {
     }
 }
 
-fn run_options(cli: &Cli, overrides: Overrides) -> RunOptions {
+fn run_options(cli: &Cli, overrides: Overrides, site: &[(String, PathBuf)]) -> RunOptions {
     RunOptions {
-        theme: cli.theme,
-        code_theme: cli.code_theme,
+        theme: cli.tui_theme,
+        site: site.to_vec(),
         overrides,
         watch: cli.watch,
         outline: cli.outline,
@@ -590,4 +598,18 @@ fn opener(target: &Path) -> io::Result<()> {
     #[cfg(not(target_os = "macos"))]
     let mut command = std::process::Command::new("xdg-open");
     command.arg(url).status().map(|_| ())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn the_index_column_is_the_default() {
+        let cli = Cli::parse_from(["rmdt", "doc.Rmd"]);
+        assert_eq!(cli.outline, OutlineMode::Pinned);
+        assert_eq!(cli.tui_theme, TuiThemeChoice::GlowDark);
+        let explicit = Cli::parse_from(["rmdt", "doc.Rmd", "--outline", "popup"]);
+        assert_eq!(explicit.outline, OutlineMode::Popup);
+    }
 }

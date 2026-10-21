@@ -18,8 +18,7 @@ use ratatui::Frame;
 
 use crate::render::{self, OutlineEntry, Row};
 use crate::rmd::{self, Document, Overrides};
-use crate::theme::{CodeThemeChoice, ThemeName, TuiTheme};
-use tui_markdown::BuiltinCodeTheme;
+use crate::theme::{TuiTheme, TuiThemeChoice};
 
 /// Where the outline lives.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default, clap::ValueEnum)]
@@ -36,14 +35,38 @@ pub enum OutlineMode {
 /// Settings the app needs from the command line.
 #[derive(Debug, Clone)]
 pub struct RunOptions {
-    pub theme: ThemeName,
-    pub code_theme: CodeThemeChoice,
+    pub theme: TuiThemeChoice,
+    /// The package's documents, when the reader was pointed at one.
+    pub site: Vec<(String, PathBuf)>,
     pub overrides: Overrides,
     pub watch: bool,
     pub outline: OutlineMode,
 }
 
-const SIDEBAR_WIDTH: u16 = 28;
+const SIDEBAR_WIDTH: u16 = 30;
+
+/// Which pane the arrow keys are working on.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub enum Pane {
+    #[default]
+    Document,
+    Index,
+}
+
+/// A line of the index column: a document of the package, or a heading of the
+/// document being read.
+#[derive(Debug, Clone, PartialEq, Eq)]
+enum IndexItem {
+    Document {
+        path: PathBuf,
+        label: String,
+    },
+    Section {
+        row: usize,
+        level: u8,
+        title: String,
+    },
+}
 
 struct Search {
     query: String,
@@ -66,11 +89,20 @@ struct App {
     doc: Document,
     rows: Vec<Row>,
     outline: Vec<OutlineEntry>,
+    /// First row of each block of the current document.
+    block_rows: Vec<usize>,
+    /// What the index column lists.
+    index_items: Vec<IndexItem>,
+    index_cursor: usize,
+    focus: Pane,
+    /// How far the index column is scrolled.
+    index_scroll: usize,
     offset: usize,
     content_width: usize,
     height: usize,
+    /// The terminal width of the last frame, for the arrow keys.
+    last_width: u16,
     theme: TuiTheme,
-    code_theme: BuiltinCodeTheme,
     options: RunOptions,
     popup: bool,
     popup_index: usize,
@@ -95,11 +127,16 @@ impl App {
             doc: rmd::load(&path, &options.overrides)?,
             rows: Vec::new(),
             outline: Vec::new(),
+            block_rows: Vec::new(),
+            index_items: Vec::new(),
+            index_cursor: 0,
+            focus: Pane::Document,
+            index_scroll: 0,
             offset: 0,
             content_width: 0,
             height: 0,
+            last_width: 0,
             theme: TuiTheme::new(options.theme),
-            code_theme: options.code_theme.resolve(),
             options,
             popup: false,
             popup_index: 0,
@@ -158,15 +195,79 @@ impl App {
     /// Re-wrap at the current width, landing on `anchor_src` if given.
     fn rebuild(&mut self, width: usize, anchor_src: Option<usize>) {
         let width = width.max(24);
-        let (rows, outline) = render::build(&self.doc, self.theme, self.code_theme, width);
-        self.rows = rows;
-        self.outline = outline;
+        let layout = render::build(&self.doc, self.theme, self.theme.code_theme(), width);
+        self.block_rows = layout.block_rows;
+        self.rows = layout.rows;
+        self.outline = layout.outline;
         self.content_width = width;
+        self.build_index_items();
         self.offset = match anchor_src {
             Some(src) => self.rows.iter().position(|row| row.src >= src).unwrap_or(0),
             None => self.offset.min(self.rows.len().saturating_sub(1)),
         };
         self.clamp_offset(self.height);
+    }
+
+    /// The documents of the package first, then this document's headings.
+    fn build_index_items(&mut self) {
+        let mut items = Vec::new();
+        let current = std::path::absolute(&self.path).unwrap_or_else(|_| self.path.clone());
+        for (label, path) in &self.options.site {
+            if std::path::absolute(path).unwrap_or_else(|_| path.clone()) == current {
+                continue;
+            }
+            items.push(IndexItem::Document {
+                path: path.clone(),
+                label: label.clone(),
+            });
+        }
+        for entry in &self.outline {
+            items.push(IndexItem::Section {
+                row: entry.row,
+                level: entry.level,
+                title: entry.title.clone(),
+            });
+        }
+        self.index_items = items;
+        self.index_cursor = self
+            .index_cursor
+            .min(self.index_items.len().saturating_sub(1));
+    }
+
+    /// Move the index cursor, skipping nothing: every line is selectable.
+    fn move_index_cursor(&mut self, forward: bool, height: usize) {
+        if self.index_items.is_empty() {
+            return;
+        }
+        self.index_cursor = if forward {
+            (self.index_cursor + 1).min(self.index_items.len() - 1)
+        } else {
+            self.index_cursor.saturating_sub(1)
+        };
+        self.keep_cursor_visible(height);
+    }
+
+    /// Scroll the column so the cursor stays on screen.
+    fn keep_cursor_visible(&mut self, height: usize) {
+        let height = height.max(3);
+        let row = drawn_row_of(self, self.index_cursor);
+        if row < self.index_scroll {
+            self.index_scroll = row;
+        } else if row >= self.index_scroll + height {
+            self.index_scroll = (row + 1).saturating_sub(height);
+        }
+    }
+
+    /// What Enter does with the highlighted line.
+    fn enter_index(&mut self) {
+        match self.index_items.get(self.index_cursor).cloned() {
+            Some(IndexItem::Document { path, .. }) => self.open(path),
+            Some(IndexItem::Section { row, .. }) => {
+                self.offset = row.min(self.max_offset());
+                self.focus = Pane::Document;
+            }
+            None => {}
+        }
     }
 
     fn clamp_offset(&mut self, height: usize) {
@@ -310,20 +411,28 @@ impl App {
             KeyCode::Esc => {
                 self.search = None;
             }
-            KeyCode::Char('j') | KeyCode::Down => {
-                self.offset = (self.offset + 1).min(self.max_offset())
-            }
-            KeyCode::Char('k') | KeyCode::Up => self.offset = self.offset.saturating_sub(1),
+            // The arrows pick a pane and move inside it: left goes to the index
+            // column, right back to the document, up and down work on whichever
+            // one is focused, and Enter takes the highlighted line.
+            KeyCode::Down => match self.focus {
+                Pane::Index => self.move_index_cursor(true, self.height),
+                Pane::Document => self.offset = (self.offset + 1).min(self.max_offset()),
+            },
+            KeyCode::Up => match self.focus {
+                Pane::Index => self.move_index_cursor(false, self.height),
+                Pane::Document => self.offset = self.offset.saturating_sub(1),
+            },
+            KeyCode::Left if self.sidebar_width(self.last_width) > 0 => self.focus = Pane::Index,
+            KeyCode::Right => self.focus = Pane::Document,
+            KeyCode::Enter if self.focus == Pane::Index => self.enter_index(),
+            KeyCode::Char('j') => self.offset = (self.offset + 1).min(self.max_offset()),
+            KeyCode::Char('k') => self.offset = self.offset.saturating_sub(1),
             KeyCode::Char('d') | KeyCode::PageDown | KeyCode::Char(' ') => {
                 self.offset = (self.offset + page).min(self.max_offset())
             }
             KeyCode::Char('u') | KeyCode::PageUp => self.offset = self.offset.saturating_sub(page),
-            KeyCode::Char('l') | KeyCode::Right => {
-                self.offset = (self.offset + page / 2).min(self.max_offset())
-            }
-            KeyCode::Char('h') | KeyCode::Left => {
-                self.offset = self.offset.saturating_sub(page / 2)
-            }
+            KeyCode::Char('l') => self.offset = (self.offset + page / 2).min(self.max_offset()),
+            KeyCode::Char('h') => self.offset = self.offset.saturating_sub(page / 2),
             KeyCode::Char('g') => self.offset = 0,
             KeyCode::Char('G') => self.offset = self.max_offset(),
             KeyCode::Char('[') => self.jump_section(false),
@@ -522,12 +631,18 @@ fn draw(frame: &mut Frame, app: &mut App) {
     let body = chunks[0];
     let status = chunks[1];
 
+    app.last_width = area.width;
     let sidebar = app.sidebar_width(area.width);
     let doc_area = if sidebar > 0 {
-        let split =
-            Layout::horizontal([Constraint::Length(sidebar), Constraint::Min(20)]).split(body);
+        let split = Layout::horizontal([
+            Constraint::Length(sidebar),
+            Constraint::Length(1),
+            Constraint::Min(20),
+        ])
+        .split(body);
         draw_sidebar(frame, app, split[0]);
-        split[1]
+        draw_divider(frame, app, split[1]);
+        split[2]
     } else {
         body
     };
@@ -628,7 +743,13 @@ fn status_line(app: &App) -> Line<'static> {
     } else if !section.is_empty() {
         spans.push(Span::styled(section, theme.chrome()));
     }
-    Line::from(spans)
+    if app.focus == Pane::Index {
+        spans.push(Span::styled(
+            "  index  ↑↓ pick  Enter opens  → back",
+            theme.index_heading(),
+        ));
+    }
+    Line::from(spans).style(theme.status_bar())
 }
 
 fn draw_sidebar(frame: &mut Frame, app: &App, area: Rect) {
@@ -639,38 +760,101 @@ fn draw_sidebar(frame: &mut Frame, app: &App, area: Rect) {
     );
 }
 
+/// A vertical rule, so the index reads as its own pane.
+fn draw_divider(frame: &mut Frame, app: &App, area: Rect) {
+    let lines: Vec<Line<'static>> = (0..area.height)
+        .map(|_| Line::from(Span::styled("│", app.theme.divider())))
+        .collect();
+    frame.render_widget(Paragraph::new(Text::from(lines)), area);
+}
+
+/// Cut a label to fit, marking that it was cut.
+fn shorten(label: &str, room: usize) -> String {
+    if room == 0 {
+        return String::new();
+    }
+    if label.chars().count() <= room {
+        return label.to_string();
+    }
+    let kept: String = label.chars().take(room.saturating_sub(1)).collect();
+    format!("{}…", kept.trim_end())
+}
+
+fn index_title(app: &App) -> String {
+    if app.options.site.is_empty() {
+        "Contents".to_string()
+    } else {
+        "Documents".to_string()
+    }
+}
+
+/// A rule is drawn where the document list becomes the heading list.
+fn separator_before(app: &App, index: usize) -> bool {
+    if index == 0 {
+        return false;
+    }
+    matches!(
+        (&app.index_items[index - 1], &app.index_items[index]),
+        (IndexItem::Document { .. }, IndexItem::Section { .. })
+    )
+}
+
+/// Where a line of the index ends up on screen, headings and rule included.
+fn drawn_row_of(app: &App, index: usize) -> usize {
+    1 + index
+        + app
+            .index_items
+            .iter()
+            .enumerate()
+            .take(index + 1)
+            .filter(|(position, _)| separator_before(app, *position))
+            .count()
+}
+
 fn sidebar_lines(app: &App, height: usize) -> Vec<Line<'static>> {
     let theme = app.theme;
-    let height = height.saturating_sub(1);
-    let current = current_section_index(app);
-    let start = current.saturating_sub(height / 2);
-
+    let visible = height.max(2);
     let mut lines: Vec<Line<'static>> = vec![Line::from(Span::styled(
-        "Contents",
-        theme.chrome().add_modifier(Modifier::BOLD),
+        index_title(app),
+        theme.index_heading(),
     ))];
-    for (index, entry) in app.outline.iter().enumerate().skip(start).take(height) {
-        let indent = "  ".repeat(entry.level.saturating_sub(1) as usize);
-        let style = if index == current {
-            Style::default()
-                .fg(theme.accent_color())
-                .add_modifier(Modifier::BOLD)
-        } else {
-            theme.chrome()
+    for (index, item) in app
+        .index_items
+        .iter()
+        .enumerate()
+        .skip(app.index_scroll)
+        .take(visible.saturating_sub(1))
+    {
+        if separator_before(app, index) {
+            lines.push(Line::from(Span::styled(
+                "─".repeat(SIDEBAR_WIDTH as usize - 3),
+                theme.divider(),
+            )));
+        }
+        let (label, indent) = match item {
+            IndexItem::Document { label, .. } => (label.clone(), 0usize),
+            IndexItem::Section { level, title, .. } => (title.clone(), *level as usize),
         };
+        let selected = index == app.index_cursor;
+        let style = match (selected, app.focus) {
+            (true, Pane::Index) => theme.index_selected(),
+            (true, Pane::Document) => theme.index_current(),
+            (false, _) => theme.index_idle(),
+        };
+        let prefix = if indent == 0 {
+            String::new()
+        } else {
+            "  ".repeat(indent.saturating_sub(1))
+        };
+        // One row per entry: a wrapped label would move the rows the cursor
+        // arithmetic counts on.
+        let room = (SIDEBAR_WIDTH as usize).saturating_sub(prefix.chars().count() + 1);
         lines.push(Line::from(Span::styled(
-            format!("{indent}{}", entry.title),
+            format!("{prefix}{}", shorten(&label, room)),
             style,
         )));
     }
     lines
-}
-
-fn current_section_index(app: &App) -> usize {
-    app.outline
-        .iter()
-        .rposition(|entry| entry.row <= app.offset)
-        .unwrap_or(0)
 }
 
 fn draw_outline_popup(frame: &mut Frame, app: &App, area: Rect) {
@@ -893,7 +1077,6 @@ fn centered(area: Rect, width: u16, height: u16) -> Rect {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::theme::ThemeName;
 
     /// Three sections with four paragraphs each, so the document is comfortably
     /// taller than the test viewport.
@@ -955,17 +1138,20 @@ mu paragraph
 
     fn options() -> RunOptions {
         RunOptions {
-            theme: ThemeName::Rmarkdown,
-            code_theme: CodeThemeChoice::Dark,
+            theme: TuiThemeChoice::GlowDark,
+            site: Vec::new(),
             overrides: Overrides::default(),
             watch: false,
-            outline: OutlineMode::Popup,
+            outline: OutlineMode::Pinned,
         }
     }
 
     fn app_for(scratch: &Scratch) -> App {
         let mut app = App::new(vec![scratch.doc()], options()).expect("app");
+        // A viewport shorter than the document, and a terminal wide enough for
+        // the index column, which is what a draw would have recorded.
         app.height = 8;
+        app.last_width = 120;
         app
     }
 
@@ -989,20 +1175,35 @@ mu paragraph
     }
 
     #[test]
-    fn the_code_palette_follows_the_choice() {
-        use crate::theme::CodeThemeChoice;
+    fn the_terminal_theme_carries_glow_colours() {
+        use crate::theme::TuiThemeChoice;
+        use tui_markdown::StyleSheet;
+        let dark = TuiTheme::new(TuiThemeChoice::GlowDark);
         assert_eq!(
-            CodeThemeChoice::Light.resolve(),
-            BuiltinCodeTheme::InspiredGitHub
+            dark.heading(2).fg,
+            Some(Color::Indexed(39)),
+            "glamour's heading blue"
         );
         assert_eq!(
-            CodeThemeChoice::Dark.resolve(),
-            BuiltinCodeTheme::Base16OceanDark
+            dark.heading(1).bg,
+            Some(Color::Indexed(63)),
+            "glow's purple bar behind the first heading"
         );
-        assert_eq!(CodeThemeChoice::default(), CodeThemeChoice::Dark);
         assert_eq!(
-            CodeThemeChoice::SolarizedLight.resolve(),
-            BuiltinCodeTheme::SolarizedLight
+            dark.code().bg,
+            Some(Color::Indexed(236)),
+            "the inline code chip"
+        );
+        assert_eq!(dark.index_selected().fg, Some(Color::Rgb(0xEC, 0xFD, 0x65)));
+
+        let light = TuiTheme::new(TuiThemeChoice::GlowLight);
+        assert_eq!(light.heading(2).fg, Some(Color::Indexed(27)));
+
+        let minimal = TuiTheme::new(TuiThemeChoice::Minimal);
+        assert_eq!(
+            minimal.heading(1).fg,
+            Some(Color::Reset),
+            "no fixed colours"
         );
     }
 
@@ -1106,18 +1307,22 @@ mu paragraph
     }
 
     #[test]
-    fn a_pinned_outline_takes_a_column() {
+    fn the_index_column_is_pinned_by_default() {
         let scratch = Scratch::new("pinned", DOC);
         let mut app = App::new(vec![scratch.doc()], options()).expect("app");
-        assert_eq!(app.sidebar_width(100), 0, "popup mode has no column");
-        press(&mut app, KeyCode::Char('t'));
-        assert_eq!(app.sidebar_width(100), SIDEBAR_WIDTH);
+        assert_eq!(
+            app.sidebar_width(100),
+            SIDEBAR_WIDTH,
+            "the index column is there to be navigated"
+        );
         assert_eq!(app.sidebar_width(60), 0, "too narrow for a column");
         let listed = screen(&sidebar_lines(&app, 20));
         assert!(listed.contains("Contents"));
-        assert!(listed.contains("One"));
+        assert!(listed.contains("One"), "{listed}");
         press(&mut app, KeyCode::Char('t'));
-        assert_eq!(app.sidebar_width(100), 0, "t toggles back");
+        assert_eq!(app.sidebar_width(100), 0, "t switches to the popup");
+        press(&mut app, KeyCode::Char('t'));
+        assert_eq!(app.sidebar_width(100), SIDEBAR_WIDTH, "and back");
     }
 
     #[test]
@@ -1287,6 +1492,147 @@ mu paragraph
         assert!(!status(&app).contains("could not read"));
     }
 
+    /// A reader opened on a package: this document plus one other.
+    fn app_with_site(scratch: &Scratch) -> App {
+        let other = scratch.0.join("other.Rmd");
+        std::fs::write(&other, "# Another document\n\ntext\n").expect("write");
+        let mut app = App::new(
+            vec![scratch.doc()],
+            RunOptions {
+                // Both documents, the way a package hands them over.
+                site: vec![
+                    ("This document".to_string(), scratch.doc()),
+                    ("Another document".to_string(), other),
+                ],
+                ..options()
+            },
+        )
+        .expect("app");
+        app.height = 8;
+        app.last_width = 120;
+        app
+    }
+
+    #[test]
+    fn the_index_column_lists_the_package_then_the_sections() {
+        let scratch = Scratch::new("index-items", DOC);
+        let app = app_with_site(&scratch);
+        assert_eq!(
+            app.index_items[0],
+            IndexItem::Document {
+                path: scratch.0.join("other.Rmd"),
+                label: "Another document".to_string()
+            },
+            "the other document, not the one being read"
+        );
+        assert!(matches!(app.index_items[1], IndexItem::Section { .. }));
+        assert_eq!(index_title(&app), "Documents");
+
+        // A rule is drawn where the document list ends.
+        let drawn = screen(&sidebar_lines(&app, 20));
+        assert!(drawn.contains("Documents"), "{drawn}");
+        assert!(drawn.contains("Another document"), "{drawn}");
+        assert!(drawn.contains("One"), "{drawn}");
+        assert!(
+            drawn.contains('─'),
+            "no rule between the two groups: {drawn}"
+        );
+    }
+
+    #[test]
+    fn arrows_pick_a_pane_and_enter_enters_a_section() {
+        let scratch = Scratch::new("arrows", DOC);
+        let mut app = app_with_site(&scratch);
+        assert_eq!(app.focus, Pane::Document, "the document starts focused");
+
+        press(&mut app, KeyCode::Left);
+        assert_eq!(app.focus, Pane::Index);
+        let first_section = app
+            .index_items
+            .iter()
+            .position(|item| matches!(item, IndexItem::Section { .. }))
+            .expect("a section");
+        app.index_cursor = first_section;
+        press(&mut app, KeyCode::Down);
+        assert_eq!(app.index_cursor, first_section + 1, "down moves the cursor");
+
+        let target = match app.index_items[app.index_cursor] {
+            IndexItem::Section { row, .. } => row,
+            _ => panic!("expected a section"),
+        };
+        press(&mut app, KeyCode::Enter);
+        assert_eq!(app.offset, target, "Enter enters the section");
+        assert_eq!(app.focus, Pane::Document, "and hands the arrows back");
+
+        press(&mut app, KeyCode::Up);
+        assert_eq!(app.focus, Pane::Document);
+        assert!(
+            app.offset < target,
+            "up scrolls the document when it has focus"
+        );
+    }
+
+    #[test]
+    fn enter_on_a_document_opens_it() {
+        let scratch = Scratch::new("index-open", DOC);
+        let mut app = app_with_site(&scratch);
+        press(&mut app, KeyCode::Left);
+        app.index_cursor = 0;
+        press(&mut app, KeyCode::Enter);
+        assert_eq!(app.path, scratch.0.join("other.Rmd"));
+        assert!(
+            app.rows
+                .iter()
+                .any(|row| row.text().contains("Another document")),
+            "the opened document is on screen"
+        );
+        assert!(
+            !app.index_items.iter().any(|item| matches!(
+                item,
+                IndexItem::Document { label, .. } if label == "Another document"
+            )),
+            "the column no longer offers the document being read"
+        );
+        assert_eq!(
+            app.index_items
+                .iter()
+                .filter_map(|item| match item {
+                    IndexItem::Document { label, .. } => Some(label.as_str()),
+                    IndexItem::Section { .. } => None,
+                })
+                .collect::<Vec<_>>(),
+            vec!["This document"],
+            "the column now offers the document that was opened first"
+        );
+    }
+
+    #[test]
+    fn the_cursor_stays_visible_when_the_column_scrolls() {
+        let mut source = String::new();
+        for index in 0..30 {
+            source.push_str(&format!("# Section {index}\n\nparagraph {index}\n\n"));
+        }
+        let scratch = Scratch::new("index-scroll", &source);
+        let mut app = app_for(&scratch);
+        app.height = 8;
+        press(&mut app, KeyCode::Left);
+        press(&mut app, KeyCode::Char('G'));
+        for _ in 0..40 {
+            press(&mut app, KeyCode::Down);
+        }
+        assert_eq!(app.index_cursor, app.index_items.len() - 1);
+        assert!(app.index_scroll > 0, "the column scrolled");
+        let row = drawn_row_of(&app, app.index_cursor);
+        let visible = screen(&sidebar_lines(&app, app.height)).lines().count();
+        assert!(
+            row >= app.index_scroll && row < app.index_scroll + app.height,
+            "cursor row {row} outside {}..{}",
+            app.index_scroll,
+            app.index_scroll + app.height
+        );
+        assert!(visible >= 2);
+    }
+
     #[test]
     fn the_outline_can_be_switched_off() {
         let scratch = Scratch::new("outline-off", DOC);
@@ -1325,6 +1671,19 @@ mu paragraph
                 .draw(|frame| draw(frame, &mut app))
                 .unwrap_or_else(|error| panic!("overlays at {width}x{height}: {error}"));
         }
+    }
+
+    #[test]
+    fn the_index_column_reaches_the_screen() {
+        let scratch = Scratch::new("column-screen", DOC);
+        let mut app = app_for(&scratch);
+        let backend = ratatui::backend::TestBackend::new(100, 24);
+        let mut terminal = ratatui::Terminal::new(backend).expect("terminal");
+        terminal.draw(|frame| draw(frame, &mut app)).expect("draw");
+        let shown = format!("{:?}", terminal.backend());
+        assert!(shown.contains("Contents"), "the column is missing: {shown}");
+        assert!(shown.contains('│'), "no divider between the panes: {shown}");
+        assert!(shown.contains("alpha paragraph"), "{shown}");
     }
 
     #[test]

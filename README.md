@@ -85,12 +85,12 @@ run this in a terminal.
 
 | Option | Effect |
 | --- | --- |
-| `--theme rmarkdown\|github\|plain` | the look. In the browser, `rmarkdown` follows Bootstrap 3 metrics, which is what `rmarkdown::render` produces. In the terminal `plain` is monochrome and the other two share one palette, built from your terminal's own colours so it stays readable on a light background and on a dark one |
+| `--theme rmarkdown\|github\|plain` | the look of the written pages |
+| `--tui-theme glow-dark\|glow-light\|minimal` | the look of the terminal: [glow](https://github.com/charmbracelet/glow)'s palette, for a dark or a light background, or `minimal` for the terminal's own colours |
 | `--toc` / `--no-toc` | force the table of contents on or off |
 | `--toc-depth N` | how deep the contents go |
 | `--number-sections` / `--no-number-sections` | force section numbering |
-| `--outline popup\|pinned\|off` | where the outline starts |
-| `--code-theme dark\|light\|...` | syntax highlighting palette for fenced code in the terminal. Every palette is painted for one background, so `light` is the one for a light terminal; the default is `dark`, and the seven built-in themes are accepted by name |
+| `--outline pinned\|popup\|off` | where the index column starts |
 | `--watch` | read the file again whenever it changes |
 | `--no-banner` | drop the "code not executed" strip from the page |
 | `--no-math` | leave MathJax out of the page |
@@ -108,7 +108,10 @@ flags. Flags win over front matter.
 
 | Key | Action |
 | --- | --- |
-| `j` `k`, arrows | one row |
+| `j` `k` | one row |
+| `←` `→` | move between the index column and the document |
+| `↑` `↓` | move in whichever pane has the arrows |
+| `Enter` | in the index: open that document, or enter that section |
 | `d` `u`, space, page keys | one page |
 | `h` `l` | half a page |
 | `g` `G` | top, bottom |
@@ -121,6 +124,22 @@ flags. Flags win over front matter.
 | `b` | back to the file list |
 | `?` | keys |
 | `q`, `Ctrl-C` | quit |
+
+### The index column
+
+The column on the left is where navigation happens. It lists the package's other
+documents first, then the headings of the one being read, numbered as the
+document numbers them. `←` puts the arrows on the column, `↑` and `↓` pick a
+line, and `Enter` opens the document or jumps the text to that section and hands
+the arrows back to the document. `t` swaps the column for the `o` popup, `--outline
+off` leaves it out, and a terminal narrower than 80 columns keeps the column
+hidden and the popup available.
+
+The colours are glow's: its markdown palette from glamour's style files, and its
+code colours from the chroma tables those files carry. `glow-dark` and
+`glow-light` differ only in which background they are painted for, and `minimal`
+uses the terminal's own foreground with weight for headings, for a machine where
+glow's fixed colours do not suit.
 
 A modal swallows the first key that closes it, so quitting from the outline
 popup or the key list takes `Esc` then `q`.
