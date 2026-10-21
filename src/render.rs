@@ -9,13 +9,13 @@
 //! Nothing here knows about R Markdown beyond the [`Block`] variants handed to
 //! it, so the row and source map machinery is portable.
 
-use ratatui_core::style::{Color, Modifier, Style};
+use ratatui_core::style::{Modifier, Style};
 use ratatui_core::text::{Line, Span};
 use tui_markdown::{from_str_with_options, BuiltinCodeTheme, Options, StyleSheet};
 use unicode_width::UnicodeWidthChar;
 
 use crate::rmd::{Block, Document, INLINE_R_MARKER};
-use crate::theme::{CodeThemeChoice, TuiTheme};
+use crate::theme::TuiTheme;
 
 /// What a row is. Decides how it wraps and whether it gets a gutter.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -400,7 +400,8 @@ fn cells_to_spans(cells: &[(char, Style)]) -> Vec<Span<'static>> {
 mod tests {
     use super::*;
     use crate::rmd::{parse, Overrides};
-    use crate::theme::ThemeName;
+    use crate::theme::{CodeThemeChoice, ThemeName};
+    use ratatui_core::style::Color;
     use std::path::Path;
 
     fn rows_of(source: &str, width: usize) -> (Vec<Row>, Vec<OutlineEntry>) {
