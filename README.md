@@ -85,7 +85,7 @@ run this in a terminal.
 
 | Option | Effect |
 | --- | --- |
-| `--theme rmarkdown\|github\|plain` | the look, in both backends. `rmarkdown` follows Bootstrap 3 metrics, which is what `rmarkdown::render` produces |
+| `--theme rmarkdown\|github\|plain` | the look. In the browser, `rmarkdown` follows Bootstrap 3 metrics, which is what `rmarkdown::render` produces. In the terminal `plain` is monochrome and the other two share one palette, built from your terminal's own colours so it stays readable on a light background and on a dark one |
 | `--toc` / `--no-toc` | force the table of contents on or off |
 | `--toc-depth N` | how deep the contents go |
 | `--number-sections` / `--no-number-sections` | force section numbering |

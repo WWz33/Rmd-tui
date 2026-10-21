@@ -11,7 +11,7 @@
 
 use ratatui_core::style::{Modifier, Style};
 use ratatui_core::text::{Line, Span};
-use tui_markdown::{from_str_with_options, Options};
+use tui_markdown::{from_str_with_options, Options, StyleSheet};
 use unicode_width::UnicodeWidthChar;
 
 use crate::rmd::{Block, Document, INLINE_R_MARKER};
@@ -96,7 +96,7 @@ pub fn build(doc: &Document, theme: TuiTheme, width: usize) -> (Vec<Row>, Vec<Ou
                     None => text.clone(),
                 };
                 let markdown = format!("{} {title}", "#".repeat(*level as usize));
-                let rendered = render_markdown(&markdown, &options);
+                let rendered = render_markdown(&markdown, &options, theme);
                 let start = rows.len();
                 push_lines(
                     &mut rows,
@@ -113,7 +113,7 @@ pub fn build(doc: &Document, theme: TuiTheme, width: usize) -> (Vec<Row>, Vec<Ou
                 });
             }
             Block::Markdown { text, src } => {
-                let rendered = render_markdown(text, &options);
+                let rendered = render_markdown(text, &options, theme);
                 push_lines(&mut rows, rendered, RowKind::Text, *src, width, &theme);
             }
             Block::Code {
@@ -143,7 +143,7 @@ pub fn build(doc: &Document, theme: TuiTheme, width: usize) -> (Vec<Row>, Vec<Ou
                     );
                 }
                 let markdown = format!("```{lang}\n{code}\n```");
-                let rendered = render_markdown(&markdown, &options);
+                let rendered = render_markdown(&markdown, &options, theme);
                 push_lines(&mut rows, rendered, RowKind::Code, *src, width, &theme);
                 rows.push(blank(*src));
             }
@@ -230,7 +230,12 @@ fn push_lines(
 }
 
 /// Run a fragment of markdown through the renderer and take ownership of it.
-fn render_markdown(markdown: &str, options: &Options<TuiTheme>) -> Vec<Line<'static>> {
+fn render_markdown(
+    markdown: &str,
+    options: &Options<TuiTheme>,
+    theme: TuiTheme,
+) -> Vec<Line<'static>> {
+    let math = [theme.math_inline(), theme.math_display()];
     let rendered = from_str_with_options(markdown, options);
     rendered
         .lines
@@ -239,7 +244,18 @@ fn render_markdown(markdown: &str, options: &Options<TuiTheme>) -> Vec<Line<'sta
             spans: line
                 .spans
                 .into_iter()
-                .map(|span| Span::styled(span.content.replace(INLINE_R_MARKER, ""), span.style))
+                .map(|span| {
+                    let text = span.content.replace(INLINE_R_MARKER, "");
+                    // The delimiters are noise in a terminal: the style already
+                    // says this is a formula, and a line of `$$` does not read
+                    // as math.
+                    let text = if math.contains(&span.style) {
+                        text.trim_matches('$').to_string()
+                    } else {
+                        text
+                    };
+                    Span::styled(text, span.style)
+                })
                 .collect(),
             style: line.style,
             alignment: line.alignment,

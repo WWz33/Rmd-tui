@@ -101,6 +101,24 @@ const TOC_SCRIPT: &str = r#"<script>
 </script>
 "#;
 
+/// An image whose file is not there is replaced with a box naming it, instead
+/// of leaving the browser's broken-image icon in the middle of the page.
+const IMAGE_SCRIPT: &str = r#"<script>
+(function () {
+  function placeholder(image) {
+    var box = document.createElement('div');
+    box.className = 'missing-figure';
+    box.textContent = 'missing image: ' + (image.getAttribute('src') || '');
+    image.replaceWith(box);
+  }
+  document.querySelectorAll('img').forEach(function (image) {
+    if (image.complete && image.naturalWidth === 0) { placeholder(image); return; }
+    image.addEventListener('error', function () { placeholder(image); });
+  });
+})();
+</script>
+"#;
+
 const SHELL: &str = r#"<!DOCTYPE html>
 <html lang="en">
 <head>
@@ -237,7 +255,8 @@ pub fn render(doc: &Document, options: &HtmlOptions) -> String {
     } else {
         ""
     };
-    let scripts = if toc.is_empty() { "" } else { TOC_SCRIPT };
+    let toc_script = if toc.is_empty() { "" } else { TOC_SCRIPT };
+    let scripts = format!("{IMAGE_SCRIPT}{toc_script}");
 
     fill(
         SHELL,
@@ -247,7 +266,7 @@ pub fn render(doc: &Document, options: &HtmlOptions) -> String {
             ("{math_head}", math_head),
             ("{banner}", &format!("{nav}{banner}")),
             ("{content}", &content),
-            ("{scripts}", scripts),
+            ("{scripts}", scripts.as_str()),
         ],
     )
 }

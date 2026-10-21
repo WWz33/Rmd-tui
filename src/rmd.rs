@@ -1118,6 +1118,20 @@ mod tests {
     }
 
     #[test]
+    fn a_missing_image_is_replaced_with_a_box() {
+        let out = html("![a caption](figure/plot.png)\n");
+        assert!(
+            out.contains(r#"alt="a caption""#),
+            "the image itself must stay in the markup"
+        );
+        assert!(
+            out.contains("missing image: "),
+            "no fallback for a file that is not there"
+        );
+        assert!(out.contains("document.querySelectorAll('img')"));
+    }
+
+    #[test]
     fn an_image_keeps_its_alt_text_and_title() {
         let out = html("![a caption](figure/plot.png \"optional title\")\n");
         assert!(out.contains(r#"alt="a caption""#));

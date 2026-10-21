@@ -72,7 +72,7 @@ run this in a terminal.
 
 | 选项 | 作用 |
 | --- | --- |
-| `--theme rmarkdown\|github\|plain` | 外观，两个后端同时生效。`rmarkdown` 按 Bootstrap 3 的度量，也就是 `rmarkdown::render` 产出的样子 |
+| `--theme rmarkdown\|github\|plain` | 外观。浏览器里 `rmarkdown` 按 Bootstrap 3 的度量，也就是 `rmarkdown::render` 产出的样子；终端里 `plain` 是单色，另外两个共用一套配色，取自你终端自身的颜色，所以浅色背景和深色背景都能读 |
 | `--toc` / `--no-toc` | 强制打开或关闭目录 |
 | `--toc-depth N` | 目录列到第几级标题 |
 | `--number-sections` / `--no-number-sections` | 强制打开或关闭章节编号 |

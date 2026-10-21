@@ -33,7 +33,7 @@ a { color:var(--accent); text-decoration:none; } a:hover { text-decoration:under
 code { font-family:var(--mono); font-size:.9em; background:var(--mark); border-radius:4px; padding:.15em .35em; }
 pre { background:var(--code-bg); border:1px solid var(--code-border); border-radius:var(--radius);
   padding:14px 16px; overflow-x:auto; }
-pre code { background:none; padding:0; font-size:.9em; line-height:1.5; }
+pre code { background:none; padding:0; font-size:.9em; line-height:1.5; color:inherit; }
 .chunk { border:1px solid var(--code-border); border-radius:var(--radius); overflow:hidden;
   background:var(--bg); margin-bottom:1.1em; }
 .chunk pre { margin:0; border:0; border-radius:0; }
@@ -224,46 +224,29 @@ impl TuiTheme {
         Self { name }
     }
 
+    /// Accent for links, list markers and outline emphasis.
+    ///
+    /// A named colour, not a fixed one: the terminal's own palette decides the
+    /// exact shade, so the result stays readable on a light background and on a
+    /// dark one. `plain` has no accent at all.
     fn accent(&self) -> Color {
         match self.name {
-            ThemeName::Rmarkdown => Color::Rgb(51, 122, 183),
-            ThemeName::Github => Color::Rgb(9, 105, 218),
             ThemeName::Plain => Color::Reset,
+            _ => Color::Blue,
         }
     }
 
+    /// For notes, captions, gutters and borders. Mid grey reads on both
+    /// backgrounds, where a fixed light or dark grey would not.
     fn muted(&self) -> Color {
         match self.name {
-            ThemeName::Rmarkdown => Color::Rgb(119, 119, 119),
-            ThemeName::Github => Color::Rgb(101, 109, 118),
-            ThemeName::Plain => Color::DarkGray,
-        }
-    }
-
-    fn line(&self) -> Color {
-        match self.name {
-            ThemeName::Rmarkdown => Color::Rgb(221, 221, 221),
-            ThemeName::Github => Color::Rgb(216, 222, 228),
-            ThemeName::Plain => Color::DarkGray,
-        }
-    }
-
-    fn code_fg(&self) -> Color {
-        match self.name {
-            ThemeName::Rmarkdown => Color::Rgb(199, 37, 78),
-            ThemeName::Github => Color::Rgb(10, 48, 105),
             ThemeName::Plain => Color::Reset,
+            _ => Color::DarkGray,
         }
     }
 
-    fn heading_fg(&self, level: u8) -> Color {
-        match self.name {
-            ThemeName::Plain => Color::Reset,
-            _ if level <= 2 => Color::Rgb(17, 17, 17),
-            _ => self.accent(),
-        }
-    }
-
+    /// Everything starts from the terminal's own foreground. A fixed text
+    /// colour would be unreadable on one of the two backgrounds.
     fn base(&self) -> Style {
         Style::new().fg(Color::Reset)
     }
@@ -285,13 +268,15 @@ impl TuiTheme {
 }
 
 impl StyleSheet for TuiTheme {
+    /// Hierarchy comes from weight and underline, not from colour: a heading
+    /// colour that looks right on white is unreadable on black.
     fn heading(&self, level: u8) -> Style {
-        let weight = match self.name {
-            ThemeName::Plain => Modifier::BOLD,
-            _ if level <= 2 => Modifier::BOLD,
-            _ => Modifier::BOLD,
-        };
-        self.base().fg(self.heading_fg(level)).add_modifier(weight)
+        let style = self.base().add_modifier(Modifier::BOLD);
+        if level == 1 {
+            style.add_modifier(Modifier::UNDERLINED)
+        } else {
+            style
+        }
     }
 
     /// Rendered documents do not show their markdown source markers.
@@ -304,8 +289,10 @@ impl StyleSheet for TuiTheme {
         ""
     }
 
+    /// Code keeps the default foreground. Blocks are marked by their gutter and
+    /// header line; a code colour that survives both backgrounds does not exist.
     fn code(&self) -> Style {
-        self.base().fg(self.code_fg())
+        self.base()
     }
 
     fn link(&self) -> Style {
@@ -323,7 +310,7 @@ impl StyleSheet for TuiTheme {
     }
 
     fn table_border(&self) -> Style {
-        self.base().fg(self.line())
+        self.base().fg(self.muted())
     }
 
     fn table_header(&self) -> Style {
