@@ -1,5 +1,7 @@
 # rmdt
 
+English | [中文](README.zh-CN.md)
+
 Read R Markdown in the terminal, or write a page for a browser, without running
 any code.
 
@@ -184,7 +186,7 @@ put them.
 ## Tests
 
 ```sh
-cargo test                    # 89 unit tests, 15 command line tests
+cargo test                    # 89 unit tests
 cargo clippy --all-targets    # clean
 ```
 
@@ -194,14 +196,6 @@ screens through `ratatui`'s `TestBackend`. Malformed documents are in there too:
 unterminated fences and front matter, a child document that includes itself or
 forms a cycle, empty and seven hash headings, CRLF input, and a file with no
 valid UTF-8, which is reported rather than guessed at.
-
-The command line tests run the built binary: writing a page beside a source file
-without opening a browser, Markdown to stdout and to a file, redirecting output
-with `-d`, a package building a site whose every link resolves without touching
-the sources, being run without a terminal (which has to explain itself rather
-than panic), forcing the contents and section numbering either way, and the
-argument combinations that should fail. Browser opening is checked with a fake `open` on `PATH`, so the test
-asserts the real behaviour without launching anything.
 
 Rendering was compared against the Python tool this replaces on four real
 vignettes and one fixture covering every feature: heading counts by level, chunk
@@ -216,6 +210,9 @@ the `rinline` class all match exactly.
   paragraphs and list items follow the source, and table attributes are spaced
   differently. The rendered result is the same.
 - The three stylesheets and the chunk header markup are carried over unchanged.
+
+The command line tests and the Python tool this replaces are kept outside the
+repository.
 
 ## License
 

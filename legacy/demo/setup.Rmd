@@ -1,8 +1,0 @@
-# Setup, included via child=
-
-```{r setup}
-library(dplyr)
-knitr::opts_chunk$set(echo = TRUE)
-```
-
-Text after the child chunk.
