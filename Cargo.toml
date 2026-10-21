@@ -1,0 +1,28 @@
+[package]
+name = "rmdt"
+version = "0.1.0"
+edition = "2021"
+rust-version = "1.88"
+description = "Read R Markdown in the terminal, and in a browser, without running any code"
+license = "MIT OR Apache-2.0"
+readme = "README.md"
+keywords = ["rmarkdown", "tui", "ratatui", "markdown", "viewer"]
+categories = ["command-line-utilities"]
+
+[[bin]]
+name = "rmdt"
+path = "src/main.rs"
+
+[dependencies]
+clap = { version = "4.5", features = ["derive"] }
+crossterm = "0.29"
+pulldown-cmark = "0.13"
+ratatui = "0.30"
+ratatui-core = "0.1"
+tui-markdown = "0.3"
+unicode-width = "0.2"
+
+[profile.release]
+lto = true
+codegen-units = 1
+strip = true

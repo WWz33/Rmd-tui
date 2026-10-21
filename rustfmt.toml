@@ -1,0 +1,3 @@
+# Stable subset of the conventions used by the tui-markdown workspace.
+use_field_init_shorthand = true
+max_width = 100
