@@ -582,6 +582,14 @@ fn chunk_blocks(info: &str, body: &[String], base: &Path, depth: usize, src: usi
     blocks
 }
 
+/// A fence longer than any run of backticks in `code`, so the code cannot close
+/// the block it is written into. R Markdown uses the same trick: a chunk that
+/// shows a fence is opened with four backticks.
+pub fn fence_for(code: &str) -> String {
+    let longest = code.split(|ch| ch != '`').map(str::len).max().unwrap_or(0);
+    "`".repeat(longest.max(2) + 1)
+}
+
 fn language_for(engine: &str) -> String {
     match engine {
         "sh" | "shell" => "bash".to_string(),
@@ -804,7 +812,8 @@ pub fn to_markdown(doc: &Document) -> String {
                 out.push_str("\n\n");
             }
             Block::Code { lang, code, .. } => {
-                out.push_str(&format!("```{lang}\n{code}\n```\n\n"));
+                let fence = fence_for(code);
+                out.push_str(&format!("{fence}{lang}\n{code}\n{fence}\n\n"));
             }
             Block::RawHtml { text, .. } => {
                 out.push_str(text.trim_end());
@@ -1386,6 +1395,21 @@ mod tests {
     fn a_document_without_front_matter_starts_at_line_one() {
         let document = doc("# Heading\n\ntext\n");
         assert_eq!(heading_src(document.blocks.first().expect("heading")), 1);
+    }
+
+    #[test]
+    fn a_chunk_that_shows_a_fence_is_not_cut_in_two() {
+        let out = md("````{r eval=FALSE}\n```\nexample fence\n```\n````\n");
+        assert_eq!(out, "````r\n```\nexample fence\n```\n````\n");
+        let page = html("````{r eval=FALSE}\n```\nexample fence\n```\n````\n");
+        assert!(page.contains("example fence"), "{page}");
+    }
+
+    #[test]
+    fn a_fence_is_three_backticks_unless_the_code_needs_more() {
+        assert_eq!(fence_for("x <- 1"), "```");
+        assert_eq!(fence_for("```"), "````");
+        assert_eq!(fence_for("`````"), "``````");
     }
 
     #[test]

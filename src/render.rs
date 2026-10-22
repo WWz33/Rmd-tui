@@ -154,7 +154,8 @@ pub fn build(doc: &Document, theme: TuiTheme, code_theme: CodeTheme, width: usiz
                         &theme,
                     );
                 }
-                let markdown = format!("```{lang}\n{code}\n```");
+                let fence = crate::rmd::fence_for(code);
+                let markdown = format!("{fence}{lang}\n{code}\n{fence}");
                 let rendered = render_markdown(&markdown, &options, theme);
                 push_lines(&mut rows, rendered, RowKind::Code, *src, width, &theme);
                 rows.push(blank(*src));
@@ -543,6 +544,18 @@ mod tests {
         sorted.sort_unstable();
         assert_eq!(indices, sorted);
         assert!(indices[2] < rows.len());
+    }
+
+    #[test]
+    fn a_chunk_that_contains_a_fence_stays_one_code_block() {
+        let (rows, _) = rows_of("````{r eval=FALSE}\n```\nexample fence\n```\n````\n", 60);
+        let inside = rows
+            .iter()
+            .find(|row| row.text().contains("example fence"))
+            .expect("the line inside the fence");
+        // A code row carries the gutter; prose does not.
+        assert!(inside.text().starts_with("│ "), "{:?}", inside.text());
+        assert!(rows.iter().any(|row| row.text().contains("```")));
     }
 
     #[test]
