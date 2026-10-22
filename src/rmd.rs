@@ -136,11 +136,11 @@ pub fn split_front_matter(text: &str) -> (Meta, Vec<String>, usize) {
         return (meta, lines.iter().map(|line| line.to_string()).collect(), 0);
     }
     let mut nested = Meta::default();
-    let mut end = lines.len();
+    let mut end = None;
     for (index, line) in lines.iter().enumerate().skip(1) {
         let trimmed = line.trim();
         if trimmed == "---" || trimmed == "..." {
-            end = index + 1;
+            end = Some(index + 1);
             break;
         }
         if let Some((key, value)) = top_level_key(line) {
@@ -149,8 +149,17 @@ pub fn split_front_matter(text: &str) -> (Meta, Vec<String>, usize) {
             apply_key(&mut nested, &key, &value);
         }
     }
+    // An opening marker with no closing one is not front matter. A document
+    // that starts with a rule, or one whose closing marker was lost, keeps
+    // every line instead of turning into an empty page.
+    let Some(consumed) = end.map(|end| end.min(lines.len())) else {
+        return (
+            Meta::default(),
+            lines.iter().map(|line| line.to_string()).collect(),
+            0,
+        );
+    };
     merge(&mut meta, nested);
-    let consumed = end.min(lines.len());
     let body = lines[consumed..]
         .iter()
         .map(|line| line.to_string())
@@ -1377,6 +1386,22 @@ mod tests {
     fn a_document_without_front_matter_starts_at_line_one() {
         let document = doc("# Heading\n\ntext\n");
         assert_eq!(heading_src(document.blocks.first().expect("heading")), 1);
+    }
+
+    #[test]
+    fn a_header_that_is_never_closed_is_not_front_matter() {
+        // A rule on the first line, or a header whose closing marker was lost.
+        let out = html("---\n\ntext after the rule\n\n## A heading\n");
+        assert!(out.contains("text after the rule"), "{out}");
+        assert!(out.contains("A heading"), "{out}");
+        assert_eq!(doc("---\n\ntext after the rule\n").meta.title, None);
+    }
+
+    #[test]
+    fn a_closed_header_is_still_front_matter() {
+        let document = doc("---\ntitle: Kept\n---\n\nbody\n");
+        assert_eq!(document.meta.title.as_deref(), Some("Kept"));
+        assert_eq!(heading_src(document.blocks.first().expect("body")), 4);
     }
 
     #[test]
