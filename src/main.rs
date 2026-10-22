@@ -10,7 +10,7 @@ mod rmd;
 mod theme;
 mod tui;
 
-use std::io::{self, IsTerminal};
+use std::io::{self, IsTerminal, Write};
 use std::path::{Path, PathBuf};
 
 use clap::Parser;
@@ -111,6 +111,16 @@ fn main() {
     }
 }
 
+/// Write to stdout, and treat a closed pipe as the end of the work.
+///
+/// The `print!` macros panic when the reader has gone away, which
+/// `rmdt --md doc.Rmd | head` does on purpose.
+fn say(text: &str) {
+    let mut out = io::stdout().lock();
+    let _ = out.write_all(text.as_bytes());
+    let _ = out.flush();
+}
+
 fn run() -> Result<(), Box<dyn std::error::Error>> {
     let cli = Cli::parse();
     let overrides = Overrides {
@@ -175,11 +185,11 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
                 siblings,
             };
             write_html(&page.document, &page.target, &cli, Some(&site))?;
-            println!(
-                "{} -> {}",
+            say(&format!(
+                "{} -> {}\n",
                 page.document.source.display(),
                 page.target.display()
-            );
+            ));
         }
 
         let index = outdir.join("index.html");
@@ -192,7 +202,11 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
             siblings: entries.clone(),
         };
         std::fs::write(&index, html::render_index(&index_site, &entries, cli.theme))?;
-        println!("site: {} page(s) -> {}", entries.len() + 1, index.display());
+        say(&format!(
+            "site: {} page(s) -> {}\n",
+            entries.len() + 1,
+            index.display()
+        ));
 
         if cli.html {
             if want_open {
@@ -238,7 +252,7 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
                     out.push_str(&rmd::to_markdown(&rmd::load(path, &overrides)?));
                 }
                 std::fs::write(target, &out)?;
-                println!("{}", target.display());
+                say(&format!("{}\n", target.display()));
             }
             (None, Some(dir)) => {
                 std::fs::create_dir_all(dir)?;
@@ -246,12 +260,12 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
                     let target =
                         dir.join(path.with_extension("md").file_name().unwrap_or_default());
                     std::fs::write(&target, rmd::to_markdown(&rmd::load(path, &overrides)?))?;
-                    println!("{} -> {}", path.display(), target.display());
+                    say(&format!("{} -> {}\n", path.display(), target.display()));
                 }
             }
             (None, None) => {
                 for path in &files {
-                    print!("{}", rmd::to_markdown(&rmd::load(path, &overrides)?));
+                    say(&rmd::to_markdown(&rmd::load(path, &overrides)?));
                 }
             }
         }
@@ -268,7 +282,7 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
                 (None, None) => path.with_extension("html"),
             };
             write_html(&rmd::load(path, &overrides)?, &target, &cli, None)?;
-            println!("{} -> {}", path.display(), target.display());
+            say(&format!("{} -> {}\n", path.display(), target.display()));
             if want_open {
                 opened(&target, &opener(&target));
             }
@@ -584,7 +598,7 @@ fn is_rmd(path: &Path) -> bool {
 /// Say so only when a browser really was asked for and started.
 fn opened(target: &Path, result: &io::Result<()>) {
     match result {
-        Ok(()) => println!("opened {}", target.display()),
+        Ok(()) => say(&format!("opened {}\n", target.display())),
         Err(error) => eprintln!("rmdt: could not open {}: {error}", target.display()),
     }
 }
