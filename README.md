@@ -10,6 +10,8 @@ deleting things. `rmdt` skips all of that. It shows you the document, says which
 chunks it did not run, and puts a caption and a placeholder where a figure would
 have been drawn.
 
+![rmdt reading a vignette, with the index column beside the document](assets/screenshot.png)
+
 ## Never runs your code
 
 There is no execution path for document content. The only processes this program
@@ -125,15 +127,10 @@ flags. Flags win over front matter.
 | `?` | keys |
 | `q`, `Ctrl-C` | quit |
 
-### The index column
+A modal swallows the first key that closes it, so quitting from the outline
+popup or the key list takes `Esc` then `q`.
 
-The column on the left is where navigation happens. It lists the package's other
-documents first, then the headings of the one being read, numbered as the
-document numbers them. `←` puts the arrows on the column, `↑` and `↓` pick a
-line, and `Enter` opens the document or jumps the text to that section and hands
-the arrows back to the document. `t` swaps the column for the `o` popup, `--outline
-off` leaves it out, and a terminal narrower than 80 columns keeps the column
-hidden and the popup available.
+### The terminal look
 
 The colours are glow's: its markdown palette from glamour's style files, and its
 code colours from the chroma tables those files carry. `glow-dark` and
@@ -141,8 +138,15 @@ code colours from the chroma tables those files carry. `glow-dark` and
 uses the terminal's own foreground with weight for headings, for a machine where
 glow's fixed colours do not suit.
 
-A modal swallows the first key that closes it, so quitting from the outline
-popup or the key list takes `Esc` then `q`.
+These are truecolour values. A terminal that only knows the 256 colour cube drops
+a 24 bit request instead of erroring, which would leave a whole code block in the
+default foreground, so every colour is rounded to the nearest number the terminal
+has. On a 256 colour terminal the rounding lands on the numbers glow prints.
+
+R chunks get the colours glow gives those tokens. Where syntect's R grammar reads
+more than chroma's lexer does, the finer reading is kept: the name in
+`f <- function(x)` is a function, `[` and `[[` are punctuation, and `...` takes
+the colour its position gives it.
 
 ## What it does with chunks
 
@@ -162,27 +166,6 @@ have produced; the terminal shows it as a plain code span.
 
 Markdown is parsed by `pulldown-cmark`, so CommonMark behaviour is the real
 thing: lazy list continuation, tables, footnotes and alerts all work.
-
-## Not handled
-
-Sweave `.Rnw` vignettes. They are LaTeX with R chunks, not Markdown, so they need
-a LaTeX front end this tool does not have. Asking for a package whose vignettes
-are all `.Rnw` says so instead of coming up empty:
-
-```
-rmdt: no .Rmd files under ~/my_package. It holds Sweave .Rnw files such as
-~/my_package/vignettes/new_methods.Rnw, which rmdt does not read: an .Rnw
-document is LaTeX with R chunks and needs a front end this tool does not have
-yet.
-```
-
-Inline R is shown but never evaluated, so a computed value such as a date appears
-as the expression that would have produced it.
-
-Source positions belong to the file that was opened. Pressing `e` on a chunk that
-came in through `child="other.Rmd"` opens this document at the child's line
-number, which is not where that chunk lives. Everything else about a child
-document, including its text and its place in the outline, is correct.
 
 ## How it is put together
 

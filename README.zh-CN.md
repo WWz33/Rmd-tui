@@ -7,6 +7,8 @@
 渲染（knit）一篇 vignette 会执行它里面的代码：装包、读文件，甚至删东西。`rmdt` 全部跳过。
 它显示文档本身，标出哪些 chunk 没有运行，并在图本该出现的位置放上编号图注和占位框。
 
+![rmdt 正在读一篇 vignette，左边是索引栏，右边是正文](assets/screenshot.png)
+
 ## 绝不运行你的代码
 
 文档内容没有任何执行路径。本程序唯一会启动的进程是你的 `$EDITOR`（`e` 键，用来编辑你正在读的
@@ -111,17 +113,19 @@ front matter 会先被读取，所以文档只要在 `output:` 下写了 `toc: t
 | `?` | 按键说明 |
 | `q`、`Ctrl-C` | 退出 |
 
-### 索引栏
+弹层会先吃掉关闭它的那个按键，所以在大纲弹窗或按键说明里退出要按 `Esc` 再按 `q`。
 
-左边那一栏是导航的地方。先列出包里其它文档，再列出当前文档的标题（按文档自己的编号）。`←` 把方向键交给索引栏，
-`↑` `↓` 选择条目，`Enter` 打开那个文档，或把正文跳到那一节并把方向键交回正文。`t` 把常驻栏换成 `o` 弹窗，
-`--outline off` 完全不显示；终端窄于 80 列时常驻栏自动隐藏，弹窗仍可用。
+### 终端里的配色
 
 配色取自 glow：markdown 部分来自 glamour 的样式文件，代码部分来自那些文件里带的 chroma 色表。
 `glow-dark` 与 `glow-light` 的区别只是为哪种底色而画，`minimal` 用终端自身的前景色，靠字重区分标题，
 适合 glow 的固定颜色不合口味的环境。
 
-弹层会先吃掉关闭它的那个按键，所以在大纲弹窗或按键说明里退出要按 `Esc` 再按 `q`。
+这些颜色都是 24 位的。只认 256 色立方体的终端不会对 24 位请求报错，而是把整个序列丢掉，那样一整块代码都会落到
+默认前景色上，所以每个颜色都取终端上最接近的那个色号。在 256 色终端上，取出来的就是 glow 打出来的那些色号。
+
+R 代码块按 glow 给这些 token 的颜色取色。syntect 的 R 语法比 chroma 的词法分析认得更细，这几种就照
+syntect 的划分：`f <- function(x)` 里的函数名算函数，`[` 和 `[[` 算标点，`...` 按它在代码里的位置取色。
 
 ## chunk 怎么处理
 
@@ -140,24 +144,6 @@ front matter 会先被读取，所以文档只要在 `output:` 下写了 `toc: t
 
 Markdown 由 `pulldown-cmark` 解析，所以 CommonMark 的行为是正经的：列表的 lazy continuation、
 表格、脚注、alert 都正常。
-
-## 不处理的情况
-
-Sweave 的 `.Rnw` vignette。那种文档是 LaTeX 加 R chunk，不是 Markdown，需要本工具没有的 LaTeX
-前端。指到一个 vignette 全是 `.Rnw` 的包时，它会明说而不是空手而归：
-
-```
-rmdt: no .Rmd files under ~/my_package. It holds Sweave .Rnw files such as
-~/my_package/vignettes/new_methods.Rnw, which rmdt does not read: an .Rnw
-document is LaTeX with R chunks and needs a front end this tool does not have
-yet.
-```
-
-行内 R 只显示不求值，所以像日期这样的算出来的值，显示出来的是产出它的那个表达式。
-
-源码位置属于被打开的那个文件。在通过 `child="other.Rmd"` 进来的 chunk 上按 `e`，会在当前文档里
-打开 child 的行号，那里并不是这个 chunk 所在的位置。child 文档的其它方面（正文、在大纲里的位置）
-都是对的。
 
 ## 内部结构
 
