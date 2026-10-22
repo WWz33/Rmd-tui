@@ -23,10 +23,9 @@ use crate::rmd::{self, Document, Overrides};
 use crate::theme::{TuiTheme, TuiThemeChoice};
 
 /// Where the outline lives.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, clap::ValueEnum)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, clap::ValueEnum)]
 pub enum OutlineMode {
     /// A popup you open with `o`.
-    #[default]
     Popup,
     /// A column pinned to the left.
     Pinned,
