@@ -738,7 +738,7 @@ fn status_line(app: &App) -> Line<'static> {
     } else if let Some(message) = &app.status {
         spans.push(Span::styled(
             message.clone(),
-            Style::default().fg(Color::Rgb(200, 90, 90)),
+            Style::default().fg(theme.fit(Color::Rgb(200, 90, 90))),
         ));
     } else if !section.is_empty() {
         spans.push(Span::styled(section, theme.chrome()));
@@ -1176,9 +1176,9 @@ mu paragraph
 
     #[test]
     fn the_terminal_theme_carries_glow_colours() {
-        use crate::theme::TuiThemeChoice;
+        use crate::theme::{Depth, TuiThemeChoice};
         use tui_markdown::StyleSheet;
-        let dark = TuiTheme::new(TuiThemeChoice::GlowDark);
+        let dark = TuiTheme::with_depth(TuiThemeChoice::GlowDark, Depth::TrueColor);
         assert_eq!(
             dark.heading(2).fg,
             Some(Color::Indexed(39)),
@@ -1196,10 +1196,10 @@ mu paragraph
         );
         assert_eq!(dark.index_selected().fg, Some(Color::Rgb(0xEC, 0xFD, 0x65)));
 
-        let light = TuiTheme::new(TuiThemeChoice::GlowLight);
+        let light = TuiTheme::with_depth(TuiThemeChoice::GlowLight, Depth::TrueColor);
         assert_eq!(light.heading(2).fg, Some(Color::Indexed(27)));
 
-        let minimal = TuiTheme::new(TuiThemeChoice::Minimal);
+        let minimal = TuiTheme::with_depth(TuiThemeChoice::Minimal, Depth::TrueColor);
         assert_eq!(
             minimal.heading(1).fg,
             Some(Color::Reset),

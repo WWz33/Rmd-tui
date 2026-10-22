@@ -9,13 +9,13 @@
 //! Nothing here knows about R Markdown beyond the [`Block`] variants handed to
 //! it, so the row and source map machinery is portable.
 
-use ratatui_core::style::{Modifier, Style};
+use ratatui_core::style::{Color, Modifier, Style};
 use ratatui_core::text::{Line, Span};
 use tui_markdown::{from_str_with_options, CodeTheme, Options, StyleSheet};
 use unicode_width::UnicodeWidthChar;
 
 use crate::rmd::{Block, Document, INLINE_R_MARKER};
-use crate::theme::TuiTheme;
+use crate::theme::{Depth, TuiTheme};
 
 /// What a row is. Decides how it wraps and whether it gets a gutter.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -213,10 +213,42 @@ pub fn build(doc: &Document, theme: TuiTheme, code_theme: CodeTheme, width: usiz
         }
     }
 
+    fit_rows(&mut rows, theme.depth);
+
     Layout {
         rows,
         outline,
         block_rows,
+    }
+}
+
+/// Round every colour in the rows to one the terminal understands.
+///
+/// The syntax colours come back from the highlighting theme as truecolour
+/// values. A terminal that only knows the 256 colour cube drops those, so an
+/// entire code block lands on the default foreground.
+fn fit_rows(rows: &mut [Row], depth: Depth) {
+    if depth == Depth::TrueColor {
+        return;
+    }
+    // The palette is small enough that a handful of colours repeat across every
+    // row, so the nearest one is worth remembering.
+    let mut seen: Vec<(Color, Color)> = Vec::new();
+    let mut fit = |color: Color| match seen.iter().find(|(from, _)| *from == color) {
+        Some((_, to)) => *to,
+        None => {
+            let to = depth.fit(color);
+            seen.push((color, to));
+            to
+        }
+    };
+    for row in rows.iter_mut() {
+        for span in row.line.spans.iter_mut() {
+            span.style.fg = span.style.fg.map(&mut fit);
+            span.style.bg = span.style.bg.map(&mut fit);
+        }
+        row.line.style.fg = row.line.style.fg.map(&mut fit);
+        row.line.style.bg = row.line.style.bg.map(&mut fit);
     }
 }
 
@@ -422,7 +454,7 @@ mod tests {
         );
         let layout = build(
             &document,
-            TuiTheme::new(TuiThemeChoice::GlowDark),
+            TuiTheme::with_depth(TuiThemeChoice::GlowDark, Depth::TrueColor),
             TuiThemeChoice::GlowDark.code_theme(),
             width,
         );
@@ -526,7 +558,12 @@ mod tests {
             Path::new("/tmp/rmdt-render.Rmd"),
             &Overrides::default(),
         );
-        let layout = build(&document, TuiTheme::new(choice), choice.code_theme(), 60);
+        let layout = build(
+            &document,
+            TuiTheme::with_depth(choice, Depth::TrueColor),
+            choice.code_theme(),
+            60,
+        );
         layout
             .rows
             .iter()
@@ -551,6 +588,124 @@ mod tests {
         assert!(
             light.contains(&Color::Rgb(0x01, 0x9F, 0x57)),
             "glow's light chroma palette should colour the tokens: {light:?}"
+        );
+    }
+
+    /// Every (text, colour) pair of a chunk's code rows, in reading order.
+    fn chunk_spans(
+        code: &str,
+        choice: TuiThemeChoice,
+        depth: Depth,
+    ) -> Vec<(String, Option<Color>)> {
+        let source = format!("```{{r}}\n{code}\n```\n");
+        let document = parse(
+            &source,
+            Path::new("/tmp/rmdt-render.Rmd"),
+            &Overrides::default(),
+        );
+        let layout = build(
+            &document,
+            TuiTheme::with_depth(choice, depth),
+            choice.code_theme(),
+            70,
+        );
+        layout
+            .rows
+            .iter()
+            .filter(|row| row.text().starts_with("│ "))
+            .flat_map(|row| row.line.spans.iter())
+            .map(|span| (span.content.to_string(), span.style.fg))
+            .collect()
+    }
+
+    /// The colour of the first span whose text contains `token`.
+    fn colour_of(spans: &[(String, Option<Color>)], token: &str) -> Option<Color> {
+        spans
+            .iter()
+            .find(|(text, _)| text.contains(token))
+            .and_then(|(_, colour)| *colour)
+    }
+
+    #[test]
+    fn r_tokens_take_the_colours_glow_gives_them() {
+        let spans = chunk_spans(
+            "remotes::install_github(\"a/b\")\n# a comment\nx <- NA\n",
+            TuiThemeChoice::GlowDark,
+            Depth::TrueColor,
+        );
+        // A package qualifier is an operator, as it is in glow, not a keyword.
+        assert_eq!(colour_of(&spans, "::"), Some(Color::Rgb(0xEF, 0x80, 0x80)));
+        // A function is the function colour whether or not a package qualifies it.
+        assert_eq!(
+            colour_of(&spans, "install_github"),
+            Some(Color::Rgb(0x00, 0xD7, 0x87))
+        );
+        // The quotes belong to the string they delimit, and the marker to its comment.
+        assert_eq!(
+            colour_of(&spans, "\"a/b\""),
+            Some(Color::Rgb(0xC6, 0x96, 0x69))
+        );
+        assert_eq!(
+            colour_of(&spans, "# a comment"),
+            Some(Color::Rgb(0x67, 0x67, 0x67))
+        );
+        // NA is one of the named constants, not a number.
+        assert_eq!(colour_of(&spans, "NA"), Some(Color::Rgb(0x00, 0xAA, 0xFF)));
+    }
+
+    #[test]
+    fn a_call_is_not_all_function_colour() {
+        let spans = chunk_spans(
+            "library(dplyr)\n",
+            TuiThemeChoice::GlowDark,
+            Depth::TrueColor,
+        );
+        assert_eq!(
+            colour_of(&spans, "library"),
+            Some(Color::Rgb(0x00, 0xD7, 0x87))
+        );
+        assert_eq!(colour_of(&spans, "("), Some(Color::Rgb(0xE8, 0xE8, 0xA8)));
+        assert_eq!(
+            colour_of(&spans, "dplyr"),
+            Some(Color::Rgb(0xC4, 0xC4, 0xC4))
+        );
+    }
+
+    #[test]
+    fn the_r_palette_follows_the_terminal_background() {
+        let code = "remotes::install_github(\"a/b\")\n";
+        let dark = chunk_spans(code, TuiThemeChoice::GlowDark, Depth::TrueColor);
+        let light = chunk_spans(code, TuiThemeChoice::GlowLight, Depth::TrueColor);
+        assert_eq!(colour_of(&dark, "::"), Some(Color::Rgb(0xEF, 0x80, 0x80)));
+        assert_eq!(colour_of(&light, "::"), Some(Color::Rgb(0xFF, 0x26, 0x26)));
+        assert_eq!(
+            colour_of(&light, "install_github"),
+            Some(Color::Rgb(0x01, 0x9F, 0x57))
+        );
+    }
+
+    #[test]
+    fn a_256_colour_terminal_still_gets_the_whole_palette() {
+        // A terminal that only knows the cube drops a 24 bit request, so the
+        // code would come out in one flat foreground. The numbers are the ones
+        // glow prints on the same terminal.
+        let spans = chunk_spans(
+            "remotes::install_github(\"a/b\")\n# a comment\n",
+            TuiThemeChoice::GlowDark,
+            Depth::Ansi256,
+        );
+        assert_eq!(colour_of(&spans, "::"), Some(Color::Indexed(210)));
+        assert_eq!(
+            colour_of(&spans, "install_github"),
+            Some(Color::Indexed(42))
+        );
+        assert_eq!(colour_of(&spans, "\"a/b\""), Some(Color::Indexed(173)));
+        assert_eq!(colour_of(&spans, "# a comment"), Some(Color::Indexed(241)));
+        assert!(
+            !spans
+                .iter()
+                .any(|(_, colour)| matches!(colour, Some(Color::Rgb(..)))),
+            "no truecolour left to be dropped: {spans:?}"
         );
     }
 

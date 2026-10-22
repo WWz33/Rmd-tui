@@ -19,7 +19,7 @@
       <key>name</key>
       <string>Comment</string>
       <key>scope</key>
-      <string>comment</string>
+      <string>comment, punctuation.definition.comment</string>
       <key>settings</key>
       <dict>
         <key>foreground</key>
@@ -85,7 +85,7 @@
       <key>name</key>
       <string>String</string>
       <key>scope</key>
-      <string>string</string>
+      <string>string, punctuation.definition.string</string>
       <key>settings</key>
       <dict>
         <key>foreground</key>
@@ -107,7 +107,7 @@
       <key>name</key>
       <string>Number</string>
       <key>scope</key>
-      <string>constant.numeric, constant.language</string>
+      <string>constant.numeric</string>
       <key>settings</key>
       <dict>
         <key>foreground</key>
@@ -116,9 +116,20 @@
     </dict>
     <dict>
       <key>name</key>
+      <string>Constant</string>
+      <key>scope</key>
+      <string>constant.language</string>
+      <key>settings</key>
+      <dict>
+        <key>foreground</key>
+        <string>#279EFC</string>
+      </dict>
+    </dict>
+    <dict>
+      <key>name</key>
       <string>Function</string>
       <key>scope</key>
-      <string>entity.name.function, support.function, meta.function-call</string>
+      <string>entity.name.function, support.function, variable.function</string>
       <key>settings</key>
       <dict>
         <key>foreground</key>
@@ -257,6 +268,39 @@
       <dict>
         <key>foreground</key>
         <string>#777777</string>
+      </dict>
+    </dict>
+    <dict>
+      <key>name</key>
+      <string>R call paren</string>
+      <key>scope</key>
+      <string>source.r meta.function-call.r - meta.function-call.parameters.r</string>
+      <key>settings</key>
+      <dict>
+        <key>foreground</key>
+        <string>#FA7878</string>
+      </dict>
+    </dict>
+    <dict>
+      <key>name</key>
+      <string>R operator</string>
+      <key>scope</key>
+      <string>source.r keyword.other.r</string>
+      <key>settings</key>
+      <dict>
+        <key>foreground</key>
+        <string>#FF2626</string>
+      </dict>
+    </dict>
+    <dict>
+      <key>name</key>
+      <string>R constructor</string>
+      <key>scope</key>
+      <string>source.r storage.type.r</string>
+      <key>settings</key>
+      <dict>
+        <key>foreground</key>
+        <string>#019F57</string>
       </dict>
     </dict>
   </array>

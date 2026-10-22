@@ -255,10 +255,127 @@ static GLOW_LIGHT: LazyLock<CodeTheme> = LazyLock::new(|| {
         .unwrap_or_else(|_| BuiltinCodeTheme::InspiredGitHub.into())
 });
 
+/// How many colours the terminal can be asked for.
+///
+/// The palettes here are truecolour. A terminal that only knows the 256 colour
+/// cube does not error on a 24 bit request, it drops the sequence, so the text
+/// comes out in the default foreground: a whole code block then reads as one
+/// flat grey. Rounding each colour to the nearest number the terminal does
+/// understand keeps the palette visible. For this palette the rounding lands on
+/// the same numbers glow prints on the same terminal.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub enum Depth {
+    /// The sixteen ANSI colours, for a `TERM` that carries no more.
+    Ansi16,
+    /// The xterm 256 colour cube, which every terminal this tool has been run
+    /// in has. The default, so an unknown terminal still gets colour.
+    #[default]
+    Ansi256,
+    /// 24 bit colour, from `COLORTERM` or a `direct` terminal name.
+    TrueColor,
+}
+
+/// The RGB values behind the sixteen ANSI colour numbers, xterm's defaults.
+const ANSI16: [(u8, u8, u8); 16] = [
+    (0, 0, 0),
+    (128, 0, 0),
+    (0, 128, 0),
+    (128, 128, 0),
+    (0, 0, 128),
+    (128, 0, 128),
+    (0, 128, 128),
+    (192, 192, 192),
+    (128, 128, 128),
+    (255, 0, 0),
+    (0, 255, 0),
+    (255, 255, 0),
+    (0, 0, 255),
+    (255, 0, 255),
+    (0, 255, 255),
+    (255, 255, 255),
+];
+
+/// The RGB values behind an xterm 256 colour number.
+fn xterm_rgb(index: u8) -> (u8, u8, u8) {
+    let steps = [0u8, 95, 135, 175, 215, 255];
+    match index {
+        16..=231 => {
+            let i = usize::from(index - 16);
+            (steps[i / 36], steps[(i / 6) % 6], steps[i % 6])
+        }
+        232..=255 => {
+            let v = 8 + (u16::from(index) - 232) * 10;
+            (v as u8, v as u8, v as u8)
+        }
+        _ => ANSI16[usize::from(index)],
+    }
+}
+
+impl Depth {
+    /// What the environment says the terminal can take.
+    pub fn detect() -> Self {
+        Self::from_env(
+            &std::env::var("COLORTERM").unwrap_or_default(),
+            &std::env::var("TERM").unwrap_or_default(),
+        )
+    }
+
+    /// The same, from the two names that decide it: `COLORTERM` first, because
+    /// it is the one a terminal sets to say it has 24 bit colour, then the
+    /// terminal name.
+    pub fn from_env(colorterm: &str, term: &str) -> Self {
+        if colorterm.eq_ignore_ascii_case("truecolor") || colorterm.eq_ignore_ascii_case("24bit") {
+            return Self::TrueColor;
+        }
+        if term.contains("direct") {
+            Self::TrueColor
+        } else if term.contains("256") {
+            Self::Ansi256
+        } else {
+            Self::Ansi16
+        }
+    }
+
+    /// The nearest colour this terminal understands. Anything that is not a
+    /// truecolour value is already expressible and comes back untouched.
+    pub fn fit(self, color: Color) -> Color {
+        let Color::Rgb(r, g, b) = color else {
+            return color;
+        };
+        let target = (r, g, b);
+        match self {
+            Self::TrueColor => color,
+            // The cube and the grey ramp first, so a colour that is in both
+            // is named by its cube entry, as glow's own output names it.
+            Self::Ansi256 => {
+                let nearest = (16..=255u8)
+                    .chain(0..=15)
+                    .min_by_key(|index| distance(xterm_rgb(*index), target));
+                Color::Indexed(nearest.unwrap_or(16))
+            }
+            Self::Ansi16 => {
+                let nearest =
+                    (0..16u8).min_by_key(|index| distance(ANSI16[usize::from(*index)], target));
+                Color::Indexed(nearest.unwrap_or(0))
+            }
+        }
+    }
+}
+
+fn distance(a: (u8, u8, u8), b: (u8, u8, u8)) -> u32 {
+    let d = |x: u8, y: u8| {
+        let diff = i32::from(x) - i32::from(y);
+        (diff * diff) as u32
+    };
+    d(a.0, b.0) + d(a.1, b.1) + d(a.2, b.2)
+}
+
 /// Terminal styling, applied through `tui-markdown`'s style sheet.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub struct TuiTheme {
     pub name: TuiThemeChoice,
+    /// What the terminal can be asked for. Detected on construction.
+    pub depth: Depth,
 }
 
 /// glamour's markdown palette, in the 256 colour numbers its style files use.
@@ -324,8 +441,19 @@ const GLOW_LIGHT_PALETTE: Glow = Glow {
 };
 
 impl TuiTheme {
+    /// The look, for whatever colour depth the environment reports.
     pub fn new(name: TuiThemeChoice) -> Self {
-        Self { name }
+        Self::with_depth(name, Depth::detect())
+    }
+
+    /// The look for a stated colour depth.
+    pub fn with_depth(name: TuiThemeChoice, depth: Depth) -> Self {
+        Self { name, depth }
+    }
+
+    /// The nearest colour this terminal understands.
+    pub fn fit(&self, color: Color) -> Color {
+        self.depth.fit(color)
     }
 
     fn glow(&self) -> Option<&'static Glow> {
@@ -377,28 +505,32 @@ impl TuiTheme {
     /// The column heading and the selected row in the index.
     pub fn index_heading(&self) -> Style {
         match self.glow() {
-            Some(g) => Style::new().fg(g.fuchsia).add_modifier(Modifier::BOLD),
+            Some(g) => Style::new()
+                .fg(self.fit(g.fuchsia))
+                .add_modifier(Modifier::BOLD),
             None => self.base().add_modifier(Modifier::BOLD),
         }
     }
 
     pub fn index_selected(&self) -> Style {
         match self.glow() {
-            Some(g) => Style::new().fg(g.accent_green).add_modifier(Modifier::BOLD),
+            Some(g) => Style::new()
+                .fg(self.fit(g.accent_green))
+                .add_modifier(Modifier::BOLD),
             None => self.base().add_modifier(Modifier::REVERSED),
         }
     }
 
     pub fn index_idle(&self) -> Style {
         match self.glow() {
-            Some(g) => Style::new().fg(g.dim_text),
+            Some(g) => Style::new().fg(self.fit(g.dim_text)),
             None => self.chrome(),
         }
     }
 
     pub fn index_current(&self) -> Style {
         match self.glow() {
-            Some(g) => Style::new().fg(g.bright),
+            Some(g) => Style::new().fg(self.fit(g.bright)),
             None => self.base().add_modifier(Modifier::BOLD),
         }
     }
@@ -406,7 +538,7 @@ impl TuiTheme {
     /// The vertical rule between the index and the document.
     pub fn divider(&self) -> Style {
         match self.glow() {
-            Some(g) => Style::new().fg(g.mid),
+            Some(g) => Style::new().fg(self.fit(g.mid)),
             None => self.chrome(),
         }
     }
@@ -415,7 +547,7 @@ impl TuiTheme {
         match self.glow() {
             Some(g) => Style::new()
                 .fg(Color::Indexed(g.image_text))
-                .bg(g.status_background),
+                .bg(self.fit(g.status_background)),
             None => Style::new(),
         }
     }
@@ -518,5 +650,57 @@ impl StyleSheet for TuiTheme {
             Some(g) => Style::new().fg(Color::Indexed(g.image_text)),
             None => self.chrome(),
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn the_environment_picks_the_colour_depth() {
+        assert_eq!(
+            Depth::from_env("truecolor", "xterm-256color"),
+            Depth::TrueColor
+        );
+        assert_eq!(Depth::from_env("24bit", "screen"), Depth::TrueColor);
+        assert_eq!(Depth::from_env("", "xterm-direct"), Depth::TrueColor);
+        // Terminal.app's name, and the fallback for a terminal older than that.
+        assert_eq!(Depth::from_env("", "xterm-256color"), Depth::Ansi256);
+        assert_eq!(Depth::from_env("", "xterm"), Depth::Ansi16);
+        assert_eq!(Depth::from_env("", ""), Depth::Ansi16);
+    }
+
+    #[test]
+    fn the_256_colour_numbers_are_the_ones_glow_prints() {
+        // Every value here is a colour in the two TextMate themes, next to the
+        // number glow -s dark put it at.
+        let dark = Depth::Ansi256;
+        assert_eq!(dark.fit(Color::Rgb(0x00, 0xD7, 0x87)), Color::Indexed(42));
+        assert_eq!(dark.fit(Color::Rgb(0xC4, 0xC4, 0xC4)), Color::Indexed(251));
+        assert_eq!(dark.fit(Color::Rgb(0x00, 0xAA, 0xFF)), Color::Indexed(39));
+        assert_eq!(dark.fit(Color::Rgb(0xEF, 0x80, 0x80)), Color::Indexed(210));
+        assert_eq!(dark.fit(Color::Rgb(0xFF, 0x5F, 0xD2)), Color::Indexed(206));
+        assert_eq!(dark.fit(Color::Rgb(0xE8, 0xE8, 0xA8)), Color::Indexed(187));
+        assert_eq!(dark.fit(Color::Rgb(0xC6, 0x96, 0x69)), Color::Indexed(173));
+        assert_eq!(dark.fit(Color::Rgb(0x6E, 0xEF, 0xC0)), Color::Indexed(85));
+        assert_eq!(dark.fit(Color::Rgb(0x67, 0x67, 0x67)), Color::Indexed(241));
+    }
+
+    #[test]
+    fn a_truecolour_terminal_keeps_the_palette_and_a_16_colour_one_gets_16() {
+        let rgb = Color::Rgb(0x00, 0xD7, 0x87);
+        assert_eq!(Depth::TrueColor.fit(rgb), rgb);
+        // Nothing to round, and nothing to round it with.
+        assert_eq!(Depth::Ansi256.fit(Color::Indexed(42)), Color::Indexed(42));
+        assert_eq!(Depth::TrueColor.fit(Color::Reset), Color::Reset);
+        let Color::Indexed(small) = Depth::Ansi16.fit(rgb) else {
+            panic!("a 16 colour terminal still gets a colour");
+        };
+        assert!(small < 16, "{small} is outside the sixteen");
+        let Color::Indexed(grey) = Depth::Ansi16.fit(Color::Rgb(0xC4, 0xC4, 0xC4)) else {
+            panic!("grey is one of the sixteen");
+        };
+        assert_eq!(grey, 7, "the light grey of the sixteen");
     }
 }
