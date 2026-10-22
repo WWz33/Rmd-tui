@@ -473,7 +473,8 @@ fn write_html(
 /// Walk up from `start` looking for something that is clearly an R package.
 fn package_root(start: &Path) -> PathBuf {
     let start = start.canonicalize().unwrap_or_else(|_| start.to_path_buf());
-    for candidate in std::iter::once(start.as_path()).chain(start.ancestors()) {
+    // `ancestors` yields the path itself first, so the start is checked once.
+    for candidate in start.ancestors() {
         if candidate.join("DESCRIPTION").is_file() || candidate.join("vignettes").is_dir() {
             return candidate.to_path_buf();
         }
