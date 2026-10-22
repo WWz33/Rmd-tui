@@ -17,26 +17,24 @@ have been drawn.
 There is no execution path for document content. The only processes this program
 ever starts are your `$EDITOR` (on the `e` key, so you can edit the line you are
 reading) and the browser opener for `--html` (`open` on macOS, `xdg-open`
-elsewhere). Both are guards in the test suite: the front end contains no
-`Command::new` at all, and the only two call sites in the rest of the crate take
-a literal or `$EDITOR`.
+elsewhere).
 
 ## Install
 
 ```sh
-cargo build --release
-ln -sf "$PWD/target/release/rmdt" ~/.local/bin/rmdt
+cargo build --release                                # build the binary
+ln -sf "$PWD/target/release/rmdt" ~/.local/bin/rmdt  # put it on PATH
 ```
 
 ## Use
 
 ```sh
-rmdt ~/my_package
-rmdt vignettes/intro.Rmd
-rmdt --watch vignettes/intro.Rmd
-rmdt ~/my_package --html
-rmdt vignettes/intro.Rmd --md
-rmdt vignettes/intro.Rmd --md | mdt
+rmdt ~/my_package                    # a package: build the site, then read it
+rmdt vignettes/intro.Rmd             # one document
+rmdt --watch vignettes/intro.Rmd     # read it again when the file changes
+rmdt ~/my_package --html             # write the pages instead of reading them
+rmdt vignettes/intro.Rmd --md        # write the filtered Markdown
+rmdt vignettes/intro.Rmd --md | mdt  # ...and pipe that to another renderer
 ```
 
 A bare `rmdt` walks up from the current directory to the nearest package (a
@@ -49,10 +47,10 @@ Pointing `rmdt` at a package builds a small documentation site and then reads it
 in the terminal:
 
 ```sh
-cd ~/my_package
-rmdt
-rmdt --html
-rmdt --html -d /tmp/site
+cd ~/my_package           # into a package
+rmdt                      # build the site, then read it in the terminal
+rmdt --html               # write the pages instead
+rmdt --html -d /tmp/site  # write them somewhere else
 ```
 
 The site goes to `<package>/.rmdview/` and the source tree is left alone. It
@@ -102,10 +100,6 @@ run this in a terminal.
 | `--open` | open the written page in a browser. Writing a page does not open one by itself |
 | `--no-open` | state that nothing should be opened, which is the default |
 
-Front matter is read first, so a document that already declares `toc: true`,
-`toc_depth: 3` and `number_sections: yes` under `output:` gets those without any
-flags. Flags win over front matter.
-
 ### Keys
 
 | Key | Action |
@@ -127,9 +121,6 @@ flags. Flags win over front matter.
 | `?` | keys |
 | `q`, `Ctrl-C` | quit |
 
-A modal swallows the first key that closes it, so quitting from the outline
-popup or the key list takes `Esc` then `q`.
-
 ### The terminal look
 
 The colours are glow's: its markdown palette from glamour's style files, and its
@@ -137,16 +128,6 @@ code colours from the chroma tables those files carry. `glow-dark` and
 `glow-light` differ only in which background they are painted for, and `minimal`
 uses the terminal's own foreground with weight for headings, for a machine where
 glow's fixed colours do not suit.
-
-These are truecolour values. A terminal that only knows the 256 colour cube drops
-a 24 bit request instead of erroring, which would leave a whole code block in the
-default foreground, so every colour is rounded to the nearest number the terminal
-has. On a 256 colour terminal the rounding lands on the numbers glow prints.
-
-R chunks get the colours glow gives those tokens. Where syntect's R grammar reads
-more than chroma's lexer does, the finer reading is kept: the name in
-`f <- function(x)` is a function, `[` and `[[` are punctuation, and `...` takes
-the colour its position gives it.
 
 ## What it does with chunks
 
@@ -163,9 +144,6 @@ the colour its position gives it.
 Inline R (`` `r nrow(df)` ``) is shown as an expression, never evaluated. In the
 HTML output it keeps a `rinline` class so you can see which values the code would
 have produced; the terminal shows it as a plain code span.
-
-Markdown is parsed by `pulldown-cmark`, so CommonMark behaviour is the real
-thing: lazy list continuation, tables, footnotes and alerts all work.
 
 ## How it is put together
 

@@ -12,25 +12,24 @@
 ## 绝不运行你的代码
 
 文档内容没有任何执行路径。本程序唯一会启动的进程是你的 `$EDITOR`（`e` 键，用来编辑你正在读的
-那一行）和 `--html` 的浏览器打开器（macOS 上是 `open`，其他地方是 `xdg-open`）。这两条都有测试
-守着：前端里完全没有 `Command::new`，其余代码中只有这两处调用，参数是字面量或 `$EDITOR`。
+那一行）和 `--html` 的浏览器打开器（macOS 上是 `open`，其他地方是 `xdg-open`）。
 
 ## 安装
 
 ```sh
-cargo build --release
-ln -sf "$PWD/target/release/rmdt" ~/.local/bin/rmdt
+cargo build --release                                # 编译
+ln -sf "$PWD/target/release/rmdt" ~/.local/bin/rmdt  # 放进 PATH
 ```
 
 ## 用法
 
 ```sh
-rmdt ~/my_package
-rmdt vignettes/intro.Rmd
-rmdt --watch vignettes/intro.Rmd
-rmdt ~/my_package --html
-rmdt vignettes/intro.Rmd --md
-rmdt vignettes/intro.Rmd --md | mdt
+rmdt ~/my_package                    # 指向一个包：建站点，然后在终端里读
+rmdt vignettes/intro.Rmd             # 单个文档
+rmdt --watch vignettes/intro.Rmd     # 文件一变就重新读取
+rmdt ~/my_package --html             # 只写页面，不在终端里读
+rmdt vignettes/intro.Rmd --md        # 写出过滤后的 Markdown
+rmdt vignettes/intro.Rmd --md | mdt  # 交给别的渲染器
 ```
 
 不带参数的 `rmdt` 会从当前目录向上找到最近的包（有 `DESCRIPTION` 文件或 `vignettes/` 目录）。
@@ -41,10 +40,10 @@ rmdt vignettes/intro.Rmd --md | mdt
 把 `rmdt` 指向一个包，它会建一个小型文档站点，然后在终端里读它：
 
 ```sh
-cd ~/my_package
-rmdt
-rmdt --html
-rmdt --html -d /tmp/site
+cd ~/my_package           # 进入包目录
+rmdt                      # 建站点，然后在终端里读
+rmdt --html               # 只写页面
+rmdt --html -d /tmp/site  # 写到别处
 ```
 
 站点写到 `<包目录>/.rmdview/`，源码树不动。它包含：
@@ -89,9 +88,6 @@ run this in a terminal.
 | `--open` | 用浏览器打开写出的页面。只写页面不会自己打开 |
 | `--no-open` | 明确表示什么都不打开，这也是默认行为 |
 
-front matter 会先被读取，所以文档只要在 `output:` 下写了 `toc: true`、`toc_depth: 3`、
-`number_sections: yes`，不需要任何参数就能生效。命令行参数优先于 front matter。
-
 ### 按键
 
 | 按键 | 动作 |
@@ -113,19 +109,11 @@ front matter 会先被读取，所以文档只要在 `output:` 下写了 `toc: t
 | `?` | 按键说明 |
 | `q`、`Ctrl-C` | 退出 |
 
-弹层会先吃掉关闭它的那个按键，所以在大纲弹窗或按键说明里退出要按 `Esc` 再按 `q`。
-
 ### 终端里的配色
 
-配色取自 glow：markdown 部分来自 glamour 的样式文件，代码部分来自那些文件里带的 chroma 色表。
+配色取自 `glow`：markdown 部分来自 glamour 的样式文件，代码部分来自那些文件里带的 chroma 色表。
 `glow-dark` 与 `glow-light` 的区别只是为哪种底色而画，`minimal` 用终端自身的前景色，靠字重区分标题，
 适合 glow 的固定颜色不合口味的环境。
-
-这些颜色都是 24 位的。只认 256 色立方体的终端不会对 24 位请求报错，而是把整个序列丢掉，那样一整块代码都会落到
-默认前景色上，所以每个颜色都取终端上最接近的那个色号。在 256 色终端上，取出来的就是 glow 打出来的那些色号。
-
-R 代码块按 glow 给这些 token 的颜色取色。syntect 的 R 语法比 chroma 的词法分析认得更细，这几种就照
-syntect 的划分：`f <- function(x)` 里的函数名算函数，`[` 和 `[[` 算标点，`...` 按它在代码里的位置取色。
 
 ## chunk 怎么处理
 
@@ -141,9 +129,6 @@ syntect 的划分：`f <- function(x)` 里的函数名算函数，`[` 和 `[[` �
 
 行内 R（`` `r nrow(df)` ``）按表达式显示，永不求值。在 HTML 输出里它保留 `rinline` 类，这样你能
 看出哪些值本来是代码算出来的；终端里就是一个普通的行内代码。
-
-Markdown 由 `pulldown-cmark` 解析，所以 CommonMark 的行为是正经的：列表的 lazy continuation、
-表格、脚注、alert 都正常。
 
 ## 内部结构
 
