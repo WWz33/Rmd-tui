@@ -311,6 +311,10 @@ fn render_markdown(
         .collect()
 }
 
+/// How far a tab moves the cursor, the usual terminal setting. The terminal
+/// itself would honour this, but the row has to be measured here first.
+const TAB_STOP: usize = 8;
+
 /// Wrap one line to `width` columns, optionally behind a two column gutter.
 fn wrap(
     line: Line<'static>,
@@ -343,7 +347,15 @@ fn wrap(
     let mut last_space: Option<usize> = None;
 
     for (ch, style) in cells {
-        let char_width = UnicodeWidthChar::width(ch).unwrap_or(0);
+        // A tab carries no width of its own and ratatui drops zero width
+        // characters, so it is expanded to the next stop here, the way the
+        // terminal would have drawn it.
+        let tab = ch == '\t';
+        let char_width = if tab {
+            TAB_STOP - current_width % TAB_STOP
+        } else {
+            UnicodeWidthChar::width(ch).unwrap_or(0)
+        };
         if current_width + char_width > inner && !current.is_empty() {
             let break_at = if hard { None } else { last_space };
             match break_at {
@@ -382,11 +394,15 @@ fn wrap(
                 .sum();
             last_space = current.iter().rposition(|(ch, _)| *ch == ' ');
         }
-        if ch == ' ' {
+        if ch == ' ' || tab {
             last_space = Some(current.len());
         }
         current_width += char_width;
-        current.push((ch, style));
+        if tab {
+            current.extend(std::iter::repeat_n((' ', style), char_width));
+        } else {
+            current.push((ch, style));
+        }
     }
     if !current.is_empty() {
         trim_trailing_space(&mut current);
@@ -527,6 +543,34 @@ mod tests {
         sorted.sort_unstable();
         assert_eq!(indices, sorted);
         assert!(indices[2] < rows.len());
+    }
+
+    #[test]
+    fn a_tab_becomes_spaces_instead_of_disappearing() {
+        let (rows, _) = rows_of("```{r}\nif (x) {\n\tbody()\n}\n```\n", 60);
+        let row = rows
+            .iter()
+            .find(|row| row.text().contains("body()"))
+            .expect("the body row");
+        assert!(!row.text().contains('\t'), "the tab is still there");
+        assert!(
+            row.text().starts_with("│         body()"),
+            "{:?}",
+            row.text()
+        );
+    }
+
+    #[test]
+    fn a_tab_in_prose_and_a_row_of_tabs_keep_the_width() {
+        let (rows, _) = rows_of("one\ttwo\n\n```{r}\n\t\tdeep\n```\n", 30);
+        for row in &rows {
+            assert!(row.line.width() <= 30, "{:?}", row.text());
+        }
+        let prose = rows
+            .iter()
+            .find(|row| row.text().contains("one"))
+            .expect("the prose row");
+        assert_eq!(prose.text(), "one     two", "a tab moves to column eight");
     }
 
     #[test]
