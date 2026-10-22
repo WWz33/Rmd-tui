@@ -16,6 +16,8 @@ use ratatui::text::{Line, Span, Text};
 use ratatui::widgets::{Block, Clear, Paragraph, Wrap};
 use ratatui::Frame;
 
+use unicode_width::{UnicodeWidthChar, UnicodeWidthStr};
+
 use crate::render::{self, OutlineEntry, Row};
 use crate::rmd::{self, Document, Overrides};
 use crate::theme::{TuiTheme, TuiThemeChoice};
@@ -768,15 +770,29 @@ fn draw_divider(frame: &mut Frame, app: &App, area: Rect) {
     frame.render_widget(Paragraph::new(Text::from(lines)), area);
 }
 
-/// Cut a label to fit, marking that it was cut.
+/// Cut a label to fit the columns it has, marking that it was cut.
+///
+/// The width is counted in screen columns, not characters: a CJK character
+/// takes two columns, and a label that wraps would move the rows the cursor
+/// arithmetic counts on.
 fn shorten(label: &str, room: usize) -> String {
     if room == 0 {
         return String::new();
     }
-    if label.chars().count() <= room {
+    if label.width() <= room {
         return label.to_string();
     }
-    let kept: String = label.chars().take(room.saturating_sub(1)).collect();
+    // The ellipsis takes one column of the room.
+    let mut kept = String::new();
+    let mut used = 0usize;
+    for ch in label.chars() {
+        let width = UnicodeWidthChar::width(ch).unwrap_or(0);
+        if used + width > room.saturating_sub(1) {
+            break;
+        }
+        kept.push(ch);
+        used += width;
+    }
     format!("{}…", kept.trim_end())
 }
 
@@ -1709,6 +1725,31 @@ mu paragraph
         let shown = format!("{:?}", terminal.backend());
         assert!(shown.contains("Outline"), "{shown}");
         assert!(shown.contains("Three"), "{shown}");
+    }
+
+    #[test]
+    fn shorten_measures_columns_not_characters() {
+        assert_eq!(shorten("Intro", 28), "Intro");
+        assert_eq!(shorten("abc", 0), "");
+        let cut = shorten("检索与过滤流程的详细说明与示例", 28);
+        assert!(cut.width() <= 28, "{cut:?} is {} columns", cut.width());
+        assert!(cut.ends_with('…'), "{cut:?}");
+    }
+
+    #[test]
+    fn a_wide_heading_keeps_the_index_column_one_row_per_entry() {
+        let scratch = Scratch::new("wide-label", "# 检索与过滤流程的详细说明与示例\n\ntext\n");
+        let app = app_for(&scratch);
+        let lines = sidebar_lines(&app, 20);
+        for line in &lines {
+            let text = line_text(line);
+            let width = text.width();
+            assert!(
+                width <= SIDEBAR_WIDTH as usize,
+                "{text:?} is {width} columns"
+            );
+        }
+        assert!(screen(&lines).contains('…'), "the wide label should be cut");
     }
 
     #[test]
