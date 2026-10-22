@@ -602,8 +602,13 @@ fn unwrap_inline_r(text: &str) -> String {
     let mut index = 0usize;
     while index < bytes.len() {
         if bytes[index] != b'`' {
-            out.push(bytes[index] as char);
-            index += 1;
+            // Copy up to the next backtick as a slice. Pushing bytes would
+            // take a multi byte character apart.
+            let start = index;
+            while index < bytes.len() && bytes[index] != b'`' {
+                index += 1;
+            }
+            out.push_str(&text[start..index]);
             continue;
         }
         let mut open = index;
@@ -1087,6 +1092,20 @@ mod tests {
     fn a_document_without_math_does_not_pull_mathjax_in() {
         let out = html("Just prose, no formulas, and a $5 price tag.\n");
         assert!(!out.contains("mathjax"));
+    }
+
+    #[test]
+    fn prose_outside_ascii_survives_intact() {
+        let source = "这是一段中文正文，带一个 `r nrow(df)` 行内表达式。\n";
+        let out = html(source);
+        assert!(out.contains("这是一段中文正文"), "{out}");
+        assert!(out.contains("行内表达式"), "{out}");
+        let published = md(source);
+        assert!(published.contains("这是一段中文正文"), "{published}");
+        // A character that is more than two bytes long, and one more than three.
+        let out = html("Emoji 🐻 and accents éàü stay.\n");
+        assert!(out.contains("🐻"), "{out}");
+        assert!(out.contains("éàü"), "{out}");
     }
 
     #[test]
