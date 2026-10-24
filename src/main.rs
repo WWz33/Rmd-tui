@@ -143,6 +143,9 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
     if cli.output.is_some() && sources.len() > 1 {
         return Err("-o works with a single file input".into());
     }
+    if cli.output.is_some() && !cli.html && !cli.md {
+        return Err("--output needs --html or --md".into());
+    }
 
     if single_directory {
         let root = sources[0].clone();
@@ -167,6 +170,14 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
         }
         let entries: Vec<html::SiteEntry> = plan.iter().map(SitePage::entry).collect();
 
+        // A document named index.Rmd already owns index.html; the generated
+        // index goes beside it, so that page is not overwritten.
+        let index_name = if plan.iter().any(|page| page.target_rel == "index.html") {
+            "site-index.html"
+        } else {
+            "index.html"
+        };
+
         for page in &plan {
             // Every link on a page is relative to that page's own directory.
             let siblings: Vec<html::SiteEntry> = entries
@@ -180,7 +191,7 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
                 package: package.clone(),
                 title: description.0.clone(),
                 description: description.1.clone(),
-                index_href: relative_href(&page.target_rel, "index.html"),
+                index_href: relative_href(&page.target_rel, index_name),
                 current: relative_href(&page.target_rel, &page.target_rel),
                 siblings,
             };
@@ -192,13 +203,13 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
             ));
         }
 
-        let index = outdir.join("index.html");
+        let index = outdir.join(index_name);
         let index_site = html::Site {
             package: package.clone(),
             title: description.0.clone(),
             description: description.1.clone(),
-            index_href: "index.html".to_string(),
-            current: "index.html".to_string(),
+            index_href: index_name.to_string(),
+            current: index_name.to_string(),
             siblings: entries.clone(),
         };
         std::fs::write(&index, html::render_index(&index_site, &entries, cli.theme))?;
@@ -255,10 +266,11 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
                 say(&format!("{}\n", target.display()));
             }
             (None, Some(dir)) => {
-                std::fs::create_dir_all(dir)?;
                 for path in &files {
-                    let target =
-                        dir.join(path.with_extension("md").file_name().unwrap_or_default());
+                    let target = target_in(dir, &files, path, "md");
+                    if let Some(parent) = target.parent() {
+                        std::fs::create_dir_all(parent)?;
+                    }
                     std::fs::write(&target, rmd::to_markdown(&rmd::load(path, &overrides)?))?;
                     say(&format!("{} -> {}\n", path.display(), target.display()));
                 }
@@ -276,9 +288,7 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
         for path in &files {
             let target = match (&cli.output, &cli.outdir) {
                 (Some(target), _) => target.clone(),
-                (None, Some(dir)) => {
-                    dir.join(path.with_extension("html").file_name().unwrap_or_default())
-                }
+                (None, Some(dir)) => target_in(dir, &files, path, "html"),
                 (None, None) => path.with_extension("html"),
             };
             write_html(&rmd::load(path, &overrides)?, &target, &cli, None)?;
@@ -291,6 +301,32 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
     }
 
     start_terminal(files, run_options(&cli, overrides, &[]), None)
+}
+
+/// Where one input lands under `dir`.
+///
+/// Two inputs can share a file name, for example `a/x.Rmd` and `b/x.Rmd`. Both
+/// would be written to `dir/x.html` and the second would replace the first, so
+/// a name that repeats keeps its parent directory in front of it.
+fn target_in(dir: &Path, files: &[PathBuf], path: &Path, extension: &str) -> PathBuf {
+    let name = path
+        .file_name()
+        .map(PathBuf::from)
+        .unwrap_or_else(|| PathBuf::from("document"));
+    let repeats = files
+        .iter()
+        .filter(|other| other.file_name() == path.file_name())
+        .count()
+        > 1;
+    let name = if repeats {
+        match path.parent().and_then(|parent| parent.file_name()) {
+            Some(parent) => PathBuf::from(parent).join(name),
+            None => name,
+        }
+    } else {
+        name
+    };
+    dir.join(name).with_extension(extension)
 }
 
 /// One page of the site built for a package directory.

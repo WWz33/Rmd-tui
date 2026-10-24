@@ -249,14 +249,35 @@ impl App {
     }
 
     /// Scroll the column so the cursor stays on screen.
+    ///
+    /// `index_scroll` is the index of the item at the top of the column; the
+    /// column also draws a title and, between documents and headings, a rule.
     fn keep_cursor_visible(&mut self, height: usize) {
         let height = height.max(3);
-        let row = drawn_row_of(self, self.index_cursor);
-        if row < self.index_scroll {
-            self.index_scroll = row;
-        } else if row >= self.index_scroll + height {
-            self.index_scroll = (row + 1).saturating_sub(height);
+        if self.index_cursor < self.index_scroll {
+            self.index_scroll = self.index_cursor;
+            return;
         }
+        let mut lines = 1; // the title
+        for index in self.index_scroll..=self.index_cursor {
+            lines += 1 + usize::from(separator_before(self, index));
+        }
+        if lines <= height {
+            return;
+        }
+        // Scroll down just enough that the cursor is the last line that fits.
+        let mut start = self.index_cursor;
+        let mut needed = 2; // the title and the cursor line
+        while start > 0 {
+            let above = start - 1;
+            let cost = 1 + usize::from(separator_before(self, above));
+            if needed + cost > height {
+                break;
+            }
+            needed += cost;
+            start = above;
+        }
+        self.index_scroll = start;
     }
 
     /// What Enter does with the highlighted line.
@@ -812,18 +833,6 @@ fn separator_before(app: &App, index: usize) -> bool {
         (&app.index_items[index - 1], &app.index_items[index]),
         (IndexItem::Document { .. }, IndexItem::Section { .. })
     )
-}
-
-/// Where a line of the index ends up on screen, headings and rule included.
-fn drawn_row_of(app: &App, index: usize) -> usize {
-    1 + index
-        + app
-            .index_items
-            .iter()
-            .enumerate()
-            .take(index + 1)
-            .filter(|(position, _)| separator_before(app, *position))
-            .count()
 }
 
 fn sidebar_lines(app: &App, height: usize) -> Vec<Line<'static>> {
@@ -1637,15 +1646,53 @@ mu paragraph
         }
         assert_eq!(app.index_cursor, app.index_items.len() - 1);
         assert!(app.index_scroll > 0, "the column scrolled");
-        let row = drawn_row_of(&app, app.index_cursor);
-        let visible = screen(&sidebar_lines(&app, app.height)).lines().count();
         assert!(
-            row >= app.index_scroll && row < app.index_scroll + app.height,
-            "cursor row {row} outside {}..{}",
+            app.index_scroll <= app.index_cursor,
+            "scroll {} is past the cursor {}",
             app.index_scroll,
-            app.index_scroll + app.height
+            app.index_cursor
         );
-        assert!(visible >= 2);
+        let drawn = screen(&sidebar_lines(&app, app.height));
+        assert!(
+            drawn.lines().any(|line| line.contains("Section 29")),
+            "the cursor item is not on screen:\n{drawn}"
+        );
+
+        // Walking back up must bring the cursor item with it, all the way to
+        // the first entry.
+        for _ in 0..40 {
+            press(&mut app, KeyCode::Up);
+        }
+        assert_eq!(app.index_cursor, 0);
+        assert_eq!(app.index_scroll, 0, "the column did not return to the top");
+        let drawn = screen(&sidebar_lines(&app, app.height));
+        assert!(drawn.lines().any(|line| line.contains("Section 0")));
+    }
+
+    #[test]
+    fn the_cursor_stays_visible_with_a_rule_above_it() {
+        let scratch = Scratch::new("index-rule-scroll", &"# Heading\n\ntext\n".repeat(30));
+        let mut app = app_with_site(&scratch);
+        app.height = 6;
+        press(&mut app, KeyCode::Left);
+        press(&mut app, KeyCode::Char('G'));
+        for _ in 0..40 {
+            press(&mut app, KeyCode::Down);
+        }
+        let drawn = screen(&sidebar_lines(&app, app.height));
+        let cursor = app.index_cursor;
+        let label = match &app.index_items[cursor] {
+            IndexItem::Section { title, .. } => title.clone(),
+            IndexItem::Document { label, .. } => label.clone(),
+        };
+        assert!(
+            drawn.lines().any(|line| line.contains(&label)),
+            "cursor item {label:?} is not on screen:\n{drawn}"
+        );
+        assert!(
+            drawn.lines().count() <= app.height,
+            "the column drew more lines than it has room for"
+        );
     }
 
     #[test]

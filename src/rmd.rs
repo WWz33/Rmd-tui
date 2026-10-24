@@ -128,11 +128,13 @@ pub fn parse(text: &str, source: &Path, overrides: &Overrides) -> Document {
 /// The count matters: source line numbers are reported relative to the file, so
 /// every block has to be shifted by the lines the header took.
 pub fn split_front_matter(text: &str) -> (Meta, Vec<String>, usize) {
+    // A byte order mark is invisible but makes the first line unequal to `---`.
+    let text = text.strip_prefix('\u{FEFF}').unwrap_or(text);
     let normalized = text.replace("\r\n", "\n");
     let lines: Vec<&str> = normalized.split('\n').collect();
     let mut meta = Meta::default();
     let opener = lines.first().map(|line| line.trim()).unwrap_or("");
-    if opener != "---" && opener != "----" {
+    if opener != "---" {
         return (meta, lines.iter().map(|line| line.to_string()).collect(), 0);
     }
     let mut nested = Meta::default();
@@ -185,7 +187,7 @@ fn indented_key(line: &str) -> Option<(String, String)> {
 fn split_key_value(line: &str) -> Option<(String, String)> {
     let (key, value) = line.split_once(':')?;
     let key = key.trim();
-    let value = value.trim();
+    let value = strip_yaml_comment(value.trim());
     if key.is_empty() || value.is_empty() {
         return None;
     }
@@ -195,7 +197,32 @@ fn split_key_value(line: &str) -> Option<(String, String)> {
     {
         return None;
     }
-    Some((key.to_string(), unquote(value)))
+    let value = unquote(&value);
+    if value.is_empty() {
+        return None;
+    }
+    Some((key.to_string(), value))
+}
+
+/// Cut a trailing YAML comment, which starts at `#` preceded by whitespace.
+///
+/// A `#` inside a quoted value is part of the value, so quoting is respected.
+fn strip_yaml_comment(value: &str) -> String {
+    let mut quote: Option<char> = None;
+    let mut previous = '\0';
+    for (index, ch) in value.char_indices() {
+        match quote {
+            Some(open) if ch == open => quote = None,
+            Some(_) => {}
+            None if ch == '"' || ch == '\'' => quote = Some(ch),
+            None if ch == '#' && previous.is_whitespace() => {
+                return value[..index].trim_end().to_string();
+            }
+            None => {}
+        }
+        previous = ch;
+    }
+    value.to_string()
 }
 
 fn unquote(value: &str) -> String {
@@ -383,6 +410,10 @@ fn option_value<'a>(options: &'a [(String, String)], key: &str) -> Option<&'a st
 /// `offset` is the number of lines the front matter took, so block source lines
 /// match the file the reader is looking at.
 fn parse_owned(lines: &[String], base: &Path, depth: usize, offset: usize) -> Vec<Block> {
+    // An HTML comment can wrap a chunk. Comments are blanked before the block
+    // walk, which would otherwise read the chunk inside one as live code.
+    let uncommented = blank_comments(lines);
+    let lines = uncommented.as_slice();
     let mut blocks: Vec<Block> = Vec::new();
     let mut prose: Vec<&str> = Vec::new();
     let mut prose_start = 1usize;
@@ -407,7 +438,7 @@ fn parse_owned(lines: &[String], base: &Path, depth: usize, offset: usize) -> Ve
 
         if let Some((level, text)) = atx_heading(line) {
             flush_prose(&mut prose, &mut blocks, prose_start);
-            let text = strip_comments(text).trim().to_string();
+            let text = strip_comments(&unwrap_inline_r(text)).trim().to_string();
             blocks.push(Block::Heading {
                 level,
                 anchor: slug(&clean_text(&text)),
@@ -538,8 +569,13 @@ fn chunk_blocks(info: &str, body: &[String], base: &Path, depth: usize, src: usi
         return Vec::new();
     }
 
-    if engine.starts_with('=') {
+    if engine == "=html" {
         return vec![Block::RawHtml { text: code, src }];
+    }
+    if engine.starts_with('=') {
+        // A raw block for another output format. knitr drops it from HTML, so
+        // showing LaTeX source would put stray text on the page.
+        return Vec::new();
     }
 
     let mut blocks = Vec::new();
@@ -605,7 +641,11 @@ fn strip_comments(text: &str) -> String {
         out.push_str(&rest[..start]);
         match rest[start..].find("-->") {
             Some(end) => rest = &rest[start + end + 3..],
-            None => return out,
+            // Not a comment after all: keep it and everything after it.
+            None => {
+                out.push_str(&rest[start..]);
+                return out;
+            }
         }
     }
     out.push_str(rest);
@@ -672,6 +712,66 @@ fn trim_inline_r(content: &str) -> String {
     }
 }
 
+/// Replace every `<!-- ... -->` comment with blank lines.
+///
+/// One line is left per removed line, so source line numbers stay right. Lines
+/// inside a fenced block are code, not comments, and are copied unchanged. A
+/// comment that never closes is left alone: it may be prose that only looks
+/// like an opening marker.
+fn blank_comments(lines: &[String]) -> Vec<String> {
+    let mut out = Vec::with_capacity(lines.len());
+    let mut inside = false;
+    let mut fence: Option<String> = None;
+    for line in lines {
+        if !inside {
+            if let Some(marker) = &fence {
+                if closes_fence(line, marker) {
+                    fence = None;
+                }
+                out.push(line.clone());
+                continue;
+            }
+            if let Some((marker, _)) = fence_open(line) {
+                fence = Some(marker);
+                out.push(line.clone());
+                continue;
+            }
+        }
+        let mut rest = line.as_str();
+        let mut kept = String::new();
+        loop {
+            if inside {
+                match rest.find("-->") {
+                    Some(end) => {
+                        inside = false;
+                        rest = &rest[end + 3..];
+                    }
+                    None => break,
+                }
+            } else {
+                match rest.find("<!--") {
+                    Some(start) => {
+                        kept.push_str(&rest[..start]);
+                        rest = &rest[start + 4..];
+                        inside = true;
+                    }
+                    None => {
+                        kept.push_str(rest);
+                        break;
+                    }
+                }
+            }
+        }
+        out.push(kept);
+    }
+    // A comment that never closes is left as written: the `<!--` may be prose
+    // that only looks like a marker, and dropping the rest would lose text.
+    if inside {
+        return lines.to_vec();
+    }
+    out
+}
+
 /// Strip markdown emphasis and HTML tags from a heading or caption.
 fn clean_text(text: &str) -> String {
     let text = strip_comments(text);
@@ -709,7 +809,113 @@ pub fn slug(text: &str) -> String {
     }
 }
 
+/// Move footnote definitions next to the prose that cites them.
+///
+/// Prose is flushed at every chunk, so a reference and its definition can land
+/// in different markdown runs. `pulldown-cmark` only resolves a footnote when
+/// both are in the same run, so a definition is moved to the first run that
+/// cites it. A run that already holds both is left alone, and a definition
+/// nothing cites stays where it is.
+fn hoist_footnotes(blocks: &mut [Block]) {
+    let mut definitions: Vec<(String, String, usize)> = Vec::new();
+    for (index, block) in blocks.iter().enumerate() {
+        let Block::Markdown { text, .. } = block else {
+            continue;
+        };
+        for (label, definition) in footnote_definitions(text) {
+            definitions.push((label, definition, index));
+        }
+    }
+    if definitions.is_empty() {
+        return;
+    }
+
+    let mut moves: Vec<(usize, String)> = Vec::new();
+    let mut removals: Vec<(usize, String)> = Vec::new();
+    for (label, definition, source) in &definitions {
+        let reference = format!("[^{label}]");
+        // Does the run that holds the definition also cite it? Then it already
+        // resolves, and moving anything would break the reference.
+        let cites_own = blocks
+            .get(*source)
+            .and_then(|block| match block {
+                Block::Markdown { text, .. } => Some(text),
+                _ => None,
+            })
+            .map(|text| text.replace(definition.as_str(), "").contains(&reference))
+            .unwrap_or(false);
+        if cites_own {
+            continue;
+        }
+        let target = blocks.iter().enumerate().find_map(|(index, block)| {
+            if index == *source {
+                return None;
+            }
+            match block {
+                Block::Markdown { text, .. } if text.contains(&reference) => Some(index),
+                _ => None,
+            }
+        });
+        let Some(target) = target else {
+            continue;
+        };
+        moves.push((target, definition.clone()));
+        removals.push((*source, definition.clone()));
+    }
+
+    for (target, definition) in moves {
+        if let Block::Markdown { text, .. } = &mut blocks[target] {
+            text.push('\n');
+            text.push_str(&definition);
+        }
+    }
+    for (source, definition) in removals {
+        if let Block::Markdown { text, .. } = &mut blocks[source] {
+            if let Some(at) = text.find(&definition) {
+                text.replace_range(at..at + definition.len(), "");
+            }
+            *text = text.trim().to_string();
+        }
+    }
+}
+
+/// Footnote definitions in one markdown run, as `(label, definition text)`.
+fn footnote_definitions(text: &str) -> Vec<(String, String)> {
+    let mut found = Vec::new();
+    let mut current: Option<(String, String)> = None;
+    for line in text.lines() {
+        let definition = line
+            .trim_start()
+            .strip_prefix("[^")
+            .and_then(|rest| rest.split_once("]:"));
+        match definition {
+            Some((label, body)) => {
+                if let Some(done) = current.take() {
+                    found.push(done);
+                }
+                current = Some((label.trim().to_string(), format!("[^{label}]:{body}")));
+            }
+            None => {
+                if let Some((label, mut body)) = current.take() {
+                    if line.trim().is_empty() {
+                        found.push((label, body));
+                    } else {
+                        body.push('\n');
+                        body.push_str(line);
+                        current = Some((label, body));
+                    }
+                }
+            }
+        }
+    }
+    if let Some(done) = current {
+        found.push(done);
+    }
+    found
+}
+
 fn finish(meta: Meta, mut blocks: Vec<Block>, source: &Path, overrides: &Overrides) -> Document {
+    hoist_footnotes(&mut blocks);
     let layout = Layout {
         toc: overrides.toc.or(meta.toc).unwrap_or(false),
         toc_depth: overrides
@@ -1536,5 +1742,114 @@ mod tests {
         for on in ["yes", "true", "TRUE"] {
             assert!(as_flag(on), "{on} should read as a flag");
         }
+    }
+
+    #[test]
+    fn a_rule_on_the_first_line_is_not_front_matter() {
+        let out = md("----\n\n# Section\n\ntext between rules\n\n---\n\nafter\n");
+        assert!(out.contains("# Section"), "{out}");
+        assert!(out.contains("text between rules"), "{out}");
+        assert!(out.contains("after"), "{out}");
+    }
+
+    #[test]
+    fn a_byte_order_mark_does_not_hide_the_front_matter() {
+        let out = html("\u{FEFF}---\ntitle: BOM\n---\n\nbody\n");
+        assert!(out.contains("<title>BOM</title>"), "{out}");
+        assert!(!out.contains("title: BOM</p>"), "{out}");
+
+        let out = html("\u{FEFF}# Titled\n\nbody\n");
+        assert!(out.contains("<h1"), "{out}");
+        assert!(out.contains("Titled"), "{out}");
+    }
+
+    #[test]
+    fn a_yaml_comment_does_not_turn_a_flag_off() {
+        let out = html("---\ntoc: true # enable\n---\n\n# One\n\ntext\n\n## Two\n\nmore\n");
+        assert!(out.contains(r#"<nav class="toc">"#), "{out}");
+
+        let out = html("---\nnumber_sections: yes # on\n---\n\n# One\n\ntext\n");
+        assert!(out.contains(r#"class="secnum""#), "{out}");
+
+        // A hash inside a quoted value is part of the value.
+        assert_eq!(
+            md("---\ntitle: \"a # b\"\n---\n\nbody\n"),
+            "# a # b\n\nbody\n"
+        );
+    }
+
+    #[test]
+    fn an_empty_front_matter_value_is_no_value() {
+        let out = html("---\ntitle:\n---\n\nbody\n");
+        assert!(!out.contains(r#"<div class="title"></div>"#), "{out}");
+        assert!(out.contains("<title>"), "{out}");
+    }
+
+    #[test]
+    fn a_heading_unwraps_inline_r_like_prose_does() {
+        let out = html("# Value `r 1 + 1` here\n\nBody `r 1 + 1` here.\n");
+        assert!(!out.contains("r 1 + 1"), "{out}");
+        assert_eq!(out.matches(r#"class="rinline""#).count(), 2, "{out}");
+    }
+
+    #[test]
+    fn a_raw_block_for_another_format_is_dropped() {
+        let out = html("```{=latex}\n\\textbf{raw}\n```\n\nkeep\n");
+        assert!(!out.contains("textbf"), "{out}");
+        assert!(out.contains("keep"), "{out}");
+
+        let out = html("```{=html}\n<div class='raw'>hi</div>\n```\n");
+        assert!(out.contains("<div class='raw'>hi</div>"), "{out}");
+    }
+
+    #[test]
+    fn a_comment_wrapping_a_chunk_hides_the_chunk() {
+        let out = md("<!--\n```{r secret}\nhidden()\n```\n-->\n\nafter\n");
+        assert!(!out.contains("hidden()"), "{out}");
+        assert!(!out.contains("-->"), "{out}");
+        assert!(out.contains("after"), "{out}");
+
+        let out = md("Before <!-- hidden --> after.\n");
+        assert_eq!(out, "Before  after.\n");
+    }
+
+    #[test]
+    fn a_comment_marker_inside_a_chunk_is_code() {
+        let out = md("```{r}\nx <- \"<!-- not a comment -->\"\n```\n");
+        assert!(out.contains("<!-- not a comment -->"), "{out}");
+    }
+
+    #[test]
+    fn an_unclosed_comment_keeps_the_text_after_it() {
+        let out = md("Prose <!-- open\n\nmore text\n");
+        assert!(out.contains("Prose"), "{out}");
+        assert!(out.contains("more text"), "{out}");
+    }
+
+    #[test]
+    fn a_footnote_definition_after_a_chunk_still_resolves() {
+        let out = html("See note[^1].\n\n```{r}\nx\n```\n\n[^1]: the note\n");
+        assert!(out.contains("footnote-reference"), "{out}");
+        assert!(out.contains("the note"), "{out}");
+        assert_eq!(
+            out.matches(r#"class="footnote-definition""#).count(),
+            1,
+            "{out}"
+        );
+
+        // The usual shape, reference and definition in one run, is unchanged.
+        let out = html("See note[^1].\n\n[^1]: the note\n");
+        assert!(out.contains("footnote-reference"), "{out}");
+        assert_eq!(
+            out.matches(r#"class="footnote-definition""#).count(),
+            1,
+            "{out}"
+        );
+    }
+
+    #[test]
+    fn a_definition_nothing_cites_is_left_alone() {
+        let out = md("Text only.\n\n[^9]: orphan\n");
+        assert!(out.contains("[^9]: orphan"), "{out}");
     }
 }
